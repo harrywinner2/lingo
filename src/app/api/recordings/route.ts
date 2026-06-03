@@ -3,6 +3,7 @@ import { randomBytes } from "node:crypto";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { putObject } from "@/lib/storage";
+import { preprocessingEnabled, enqueuePreprocess } from "@/lib/queue";
 
 export async function POST(req: Request) {
   const session = await auth();
@@ -49,21 +50,37 @@ export async function POST(req: Request) {
       : type.includes("wav")
         ? "wav"
         : "webm";
-  const key = `rec/${prompt.campaignId}/${randomBytes(12).toString("hex")}.${ext}`;
+  const rawKey = `raw/${prompt.campaignId}/${randomBytes(12).toString("hex")}.${ext}`;
   const buf = Buffer.from(await file.arrayBuffer());
-  const url = await putObject(key, buf);
+  const url = await putObject(rawKey, buf, type);
 
+  // With a preprocessing worker, the clip starts as "processing" and becomes
+  // "ready" once normalized. Without one, it's immediately ready (dev/pilot).
+  const willPreprocess = preprocessingEnabled();
   const recording = await prisma.recording.create({
     data: {
       promptId,
       campaignId: prompt.campaignId,
       speakerId: userId,
       audioUrl: url,
+      rawKey,
       mimeType: type,
       durationMs: Number.isFinite(durationMs) ? Math.round(durationMs) : 0,
-      status: "ready",
+      status: willPreprocess ? "processing" : "ready",
     },
   });
+
+  if (willPreprocess) {
+    try {
+      await enqueuePreprocess({ recordingId: recording.id, rawKey, mimeType: type });
+    } catch {
+      // If the queue is down, leave it ready so it can still be verified.
+      await prisma.recording.update({
+        where: { id: recording.id },
+        data: { status: "ready" },
+      });
+    }
+  }
 
   return NextResponse.json({ id: recording.id, audioUrl: url });
 }

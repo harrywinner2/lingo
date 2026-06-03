@@ -174,10 +174,15 @@ model Recording {
   promptId   String
   campaignId String
   speakerId  String
-  audioUrl   String
+  audioUrl   String // currently-servable URL (raw while pending, clean once processed)
+  rawKey     String? // R2 key of the raw upload (purged after preprocessing)
+  cleanKey   String? // R2 key of the normalized clip kept for grading/training
+  qualityMetrics String? // JSON: duration, sampleRate, loudness, clipping, etc.
+  rawDeleted     Boolean @default(false)
+  deliveredToDrive Boolean @default(false)
   mimeType   String   @default("audio/webm")
   durationMs Int      @default(0)
-  status     String   @default("ready") // uploaded | ready | accepted | rejected
+  status     String   @default("ready") // uploaded | processing | ready | accepted | rejected
   score      Float? // consensus score once decided
   createdAt  DateTime @default(now())
 
