@@ -1,0 +1,82 @@
+@import "tailwindcss";
+
+@theme {
+  --color-paper: #fbf8f2;
+  --color-ink: #1c1a17;
+  --color-muted: #6b6357;
+  --color-line: #ece5d8;
+  --color-card: #ffffff;
+
+  --color-primary: #de9b10;
+  --color-primary-600: #c4870a;
+  --color-primary-foreground: #1c1a17;
+
+  --color-accent: #0e7c66;
+  --color-accent-600: #0a6553;
+
+  --color-success: #15803d;
+  --color-warning: #d97706;
+  --color-danger: #dc2626;
+
+  --font-sans: var(--font-sans), ui-sans-serif, system-ui, sans-serif;
+  --font-display: var(--font-display), Georgia, serif;
+
+  --radius: 0.9rem;
+  --shadow-soft: 0 1px 2px rgba(28, 26, 23, 0.04),
+    0 8px 24px -12px rgba(28, 26, 23, 0.18);
+  --shadow-lift: 0 2px 4px rgba(28, 26, 23, 0.05),
+    0 18px 40px -16px rgba(28, 26, 23, 0.28);
+}
+
+* {
+  border-color: var(--color-line);
+}
+
+html {
+  -webkit-tap-highlight-color: transparent;
+}
+
+body {
+  background-color: var(--color-paper);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* subtle paper grain on large surfaces */
+.bg-grain {
+  background-image: radial-gradient(
+    rgba(28, 26, 23, 0.035) 1px,
+    transparent 1px
+  );
+  background-size: 22px 22px;
+}
+
+@keyframes pulse-ring {
+  0% {
+    box-shadow: 0 0 0 0 rgba(222, 155, 16, 0.55);
+  }
+  70% {
+    box-shadow: 0 0 0 22px rgba(222, 155, 16, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(222, 155, 16, 0);
+  }
+}
+.animate-recording {
+  animation: pulse-ring 1.4s infinite;
+}
+
+@keyframes fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.animate-fade-up {
+  animation: fade-up 0.4s ease both;
+}

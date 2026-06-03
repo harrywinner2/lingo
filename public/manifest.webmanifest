@@ -1,0 +1,19 @@
+{
+  "name": "Lingo — keep a language alive",
+  "short_name": "Lingo",
+  "description": "Record, verify and reward spoken contributions in low-resource languages.",
+  "start_url": "/app",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#fbf8f2",
+  "theme_color": "#de9b10",
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
