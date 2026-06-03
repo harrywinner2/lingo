@@ -1,52 +1,37 @@
-import { langName } from "@/lib/languages";
+// Faithful to the original lingo.cm translator.
 
-// Model repo names look like "francais-bulu" / "bulu-francais" / "english-francais".
-// We parse them into a directed set of available pairs and pivot through French
-// when there's no direct model — exactly how the legacy lingo.cm chains models.
+export const TRANSLATE_LANGS = [
+  { code: "bulu", name: "Bulu" },
+  { code: "francais", name: "Français" },
+  { code: "fufulde", name: "Fufulde" },
+  { code: "ghomala", name: "Ghomala" },
+  { code: "pinyin", name: "Pinyin" },
+] as const;
 
-export function parseModels(models: string[]) {
-  const pairs = new Set<string>();
-  const langs = new Set<string>();
-  for (const m of models) {
-    const i = m.indexOf("-");
-    if (i <= 0) continue;
-    const from = m.slice(0, i);
-    const to = m.slice(i + 1);
-    if (!from || !to) continue;
-    pairs.add(m);
-    langs.add(from);
-    langs.add(to);
-  }
-  return { pairs, langs: [...langs].sort() };
-}
-
-export function buildChain(
-  pairs: Set<string>,
-  source: string,
-  target: string,
-): string[] | null {
+// Pivot through French, exactly like the original script.js.
+export function buildChain(source: string, target: string): string[] | null {
   if (!source || !target || source === target) return null;
-  if (pairs.has(`${source}-${target}`)) return [`${source}-${target}`];
-  // pivot through French
-  if (pairs.has(`${source}-francais`) && pairs.has(`francais-${target}`))
-    return [`${source}-francais`, `francais-${target}`];
-  return null;
+  if (source === "francais" || target === "francais") return [`${source}-${target}`];
+  return [`${source}-francais`, `francais-${target}`];
 }
-
-const SPECIAL: Record<string, string> = {
-  francais: "Français",
-  english: "English",
-  anglais: "English",
-};
 
 export function tName(code: string) {
-  if (SPECIAL[code]) return SPECIAL[code];
-  const n = langName(code);
-  return n === code ? code.charAt(0).toUpperCase() + code.slice(1) : n;
+  return TRANSLATE_LANGS.find((l) => l.code === code)?.name ?? code;
 }
 
-// AGLC / IPA helpers commonly needed to write these languages.
+// The original AGLC virtual keyboard characters.
 export const AGLC_CHARS = [
-  "ɑ", "ɛ", "ə", "ɔ", "ŋ", "ɲ", "ʒ", "ʉ", "ɣ", "ɓ", "ɗ", "ʼ",
-  "́", "̀", "̌", "̂",
+  "́", "ŋ", "̌", "ɑ", "ɛ", "–", "ə", "3", "ɔ", "'", "̀", "ʉ", "Ə", "Ŋ",
 ];
+
+// Prefilled Google Form for "leave a comment on this translation".
+export function commentUrl(models: string[], input: string, output: string) {
+  const trace = encodeURIComponent(JSON.stringify({ models, input, output }));
+  return (
+    "https://docs.google.com/forms/d/e/1FAIpQLSce1fG0yYwBfSY4R6dQSehsQeQpERAVJAkYz4fYYSr7oeDeFQ/viewform?usp=pp_url&entry.1037849118=" +
+    trace
+  );
+}
+
+export const EARN_FORM_URL = "https://forms.gle/n3VbFJ43Ltq95WRC7";
+export const WHATSAPP_URL = "https://wa.me/237675112818";
