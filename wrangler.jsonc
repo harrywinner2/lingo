@@ -22,6 +22,7 @@
       "bucket_name": "lingo-audio"
     }
   ],
+  "workers_dev": true,
   "vars": {
     "EMAIL_FROM": "Lingo <noreply@lingo.cm>",
     "AUTH_DEV_LOGIN": "false"
