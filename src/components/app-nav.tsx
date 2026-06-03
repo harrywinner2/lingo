@@ -2,11 +2,12 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Home, Megaphone, Mic, Wallet } from "lucide-react";
+import { Home, Megaphone, Mic, Wallet, Compass } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const links = [
   { href: "/app", label: "Home", icon: Home, exact: true },
+  { href: "/app/discover", label: "Discover", icon: Compass },
   { href: "/app/campaigns", label: "Campaigns", icon: Megaphone },
   { href: "/app/contribute", label: "Contribute", icon: Mic },
   { href: "/app/wallet", label: "Wallet", icon: Wallet },

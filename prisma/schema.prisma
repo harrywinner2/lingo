@@ -94,6 +94,8 @@ model Campaign {
   targetLangName String? // denormalized display name (supports custom languages)
   pivotLang   String   @default("en") // language prompts are presented in
   status      String   @default("active") // draft | active | paused | closed
+  visibility  String   @default("private") // private | open (listed in Discover)
+  autoQualify Boolean  @default(false) // auto-promote probation members by scores
   budgetPoints  Int    @default(0)
   spentPoints   Int    @default(0)
   rewardRecord  Int    @default(15) // points per accepted recording
@@ -109,6 +111,7 @@ model Campaign {
   invites     Invite[]
   rewards     Reward[]
   redemptions Redemption[]
+  magicLinks  MagicLink[]
 
   @@index([ownerId])
 }
@@ -141,6 +144,27 @@ model Invite {
 
   campaign  Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
   createdBy User     @relation("InviteCreator", fields: [createdById], references: [id])
+
+  @@index([campaignId])
+}
+
+// A reusable, campaign-scoped sign-in link for an imported participant (who may
+// have no email/OAuth). Visiting it signs them straight into an account joined
+// to that campaign.
+model MagicLink {
+  id          String    @id @default(cuid())
+  token       String    @unique
+  campaignId  String
+  role        String // speaker | verifier | reviewer
+  name        String?
+  email       String?
+  phone       String?
+  userId      String? // set on first use
+  createdById String
+  expiresAt   DateTime?
+  createdAt   DateTime  @default(now())
+
+  campaign Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
 
   @@index([campaignId])
 }

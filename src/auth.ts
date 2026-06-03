@@ -43,6 +43,63 @@ if (process.env.AUTH_DEV_LOGIN === "true") {
   );
 }
 
+// Magic-link sign-in for imported participants (reusable, campaign-scoped).
+providers.push(
+  Credentials({
+    id: "magic",
+    name: "Magic link",
+    credentials: { token: { label: "Token", type: "text" } },
+    async authorize(creds) {
+      const token = (creds?.token as string)?.trim();
+      if (!token) return null;
+      const link = await prisma.magicLink.findUnique({ where: { token } });
+      if (!link) return null;
+      if (link.expiresAt && link.expiresAt < new Date()) return null;
+
+      let userId = link.userId;
+      if (!userId) {
+        let user = link.email
+          ? await prisma.user.findUnique({ where: { email: link.email } })
+          : null;
+        if (!user) {
+          user = await prisma.user.create({
+            data: {
+              name: link.name ?? link.email ?? link.phone ?? "Participant",
+              email: link.email ?? undefined,
+            },
+          });
+        }
+        userId = user.id;
+        await prisma.magicLink.update({
+          where: { id: link.id },
+          data: { userId },
+        });
+      }
+
+      // Ensure the participant is a member of (only) that campaign.
+      await prisma.membership.upsert({
+        where: {
+          campaignId_userId_role: {
+            campaignId: link.campaignId,
+            userId,
+            role: link.role,
+          },
+        },
+        update: { status: "active" },
+        create: {
+          campaignId: link.campaignId,
+          userId,
+          role: link.role,
+          status: "active",
+        },
+      });
+
+      const u = await prisma.user.findUnique({ where: { id: userId } });
+      return u ? { id: u.id, name: u.name, email: u.email, image: u.image } : null;
+    },
+  }),
+);
+
 export const { handlers, auth, signIn, signOut } = NextAuth({
   adapter: PrismaAdapter(prisma),
   trustHost: true,

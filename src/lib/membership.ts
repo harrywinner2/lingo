@@ -13,7 +13,12 @@ export async function isMember(
   if (!campaign) return false;
   if (campaign.ownerId === userId) return true;
   const m = await prisma.membership.findFirst({
-    where: { campaignId, userId, role: { in: roles }, status: "active" },
+    where: {
+      campaignId,
+      userId,
+      role: { in: roles },
+      status: { in: ["active", "probation"] },
+    },
     select: { id: true },
   });
   return m !== null;

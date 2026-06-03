@@ -8,6 +8,7 @@ import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/session";
 import { awardPoints, getBalance } from "@/lib/points";
 import { slugifyLang } from "@/lib/languages";
+import type { Prisma } from "@/generated/prisma";
 
 // ---------- helpers ----------
 
@@ -22,7 +23,12 @@ async function assertCampaignRole(
   if (!campaign) throw new Error("Campaign not found");
   if (campaign.ownerId === userId) return campaign;
   const membership = await prisma.membership.findFirst({
-    where: { campaignId, userId, role: { in: roles }, status: "active" },
+    where: {
+      campaignId,
+      userId,
+      role: { in: roles },
+      status: { in: ["active", "probation"] },
+    },
   });
   if (!membership) throw new Error("Not authorized for this campaign");
   return campaign;
@@ -30,6 +36,51 @@ async function assertCampaignRole(
 
 function code(len = 8) {
   return randomBytes(16).toString("base64url").slice(0, len);
+}
+
+// Proof-of-work thresholds for auto-qualifying probation members.
+const QUALIFY_ACCEPTED = 2; // speaker: accepted recordings
+const QUALIFY_VERIFS = 5; // verifier: verdicts on decided clips
+const QUALIFY_AGREEMENT = 0.7; // verifier: agreement with consensus
+
+// Promote a probation member to active once their work proves out. Safe to call
+// often; only acts on probation memberships that meet the bar.
+async function evaluateProbation(
+  db: Prisma.TransactionClient,
+  campaignId: string,
+  userId: string,
+) {
+  const memberships = await db.membership.findMany({
+    where: { campaignId, userId, status: "probation" },
+  });
+  for (const m of memberships) {
+    let qualifies = false;
+    if (m.role === "speaker") {
+      const accepted = await db.recording.count({
+        where: { campaignId, speakerId: userId, status: "accepted" },
+      });
+      qualifies = accepted >= QUALIFY_ACCEPTED;
+    } else if (m.role === "verifier") {
+      const vs = await db.verification.findMany({
+        where: {
+          verifierId: userId,
+          recording: { campaignId, status: { in: ["accepted", "rejected"] } },
+        },
+        include: { recording: { select: { status: true } } },
+      });
+      if (vs.length >= QUALIFY_VERIFS) {
+        const agree = vs.filter(
+          (v) => (v.verdict !== "incorrect") === (v.recording.status === "accepted"),
+        ).length;
+        qualifies = agree / vs.length >= QUALIFY_AGREEMENT;
+      }
+    }
+    if (qualifies)
+      await db.membership.update({
+        where: { id: m.id },
+        data: { status: "active" },
+      });
+  }
 }
 
 // ---------- campaigns ----------
@@ -185,6 +236,100 @@ export async function joinByCode(inviteCode: string) {
   redirect(`/app/contribute/${invite.campaignId}`);
 }
 
+// ---------- participant import (magic links) ----------
+
+const ROLES = ["speaker", "verifier", "reviewer"];
+
+export async function importParticipants(
+  campaignId: string,
+  rows: { name?: string | null; contact: string }[],
+  role: string,
+) {
+  const user = await requireUser();
+  await assertCampaignRole(campaignId, user.id, ["owner", "manager"]);
+  if (!ROLES.includes(role)) throw new Error("Invalid role");
+
+  const expiresAt = new Date(Date.now() + 90 * 24 * 60 * 60 * 1000);
+  const created: { name: string; contact: string; token: string }[] = [];
+  for (const r of rows) {
+    const contact = (r.contact ?? "").trim();
+    if (contact.length < 3) continue;
+    const isEmail = contact.includes("@");
+    const token = randomBytes(18).toString("base64url");
+    await prisma.magicLink.create({
+      data: {
+        token,
+        campaignId,
+        role,
+        name: r.name?.trim() || null,
+        email: isEmail ? contact.toLowerCase() : null,
+        phone: isEmail ? null : contact,
+        createdById: user.id,
+        expiresAt,
+      },
+    });
+    created.push({ name: r.name?.trim() || contact, contact, token });
+  }
+  revalidatePath(`/app/campaigns/${campaignId}/members`);
+  return created;
+}
+
+// ---------- open campaigns & onboarding ----------
+
+export async function setCampaignVisibility(
+  campaignId: string,
+  visibility: "open" | "private",
+) {
+  const user = await requireUser();
+  await assertCampaignRole(campaignId, user.id, ["owner", "manager"]);
+  await prisma.campaign.update({ where: { id: campaignId }, data: { visibility } });
+  revalidatePath(`/app/campaigns/${campaignId}`);
+}
+
+export async function setAutoQualify(campaignId: string, autoQualify: boolean) {
+  const user = await requireUser();
+  await assertCampaignRole(campaignId, user.id, ["owner", "manager"]);
+  await prisma.campaign.update({ where: { id: campaignId }, data: { autoQualify } });
+  revalidatePath(`/app/campaigns/${campaignId}/members`);
+}
+
+// A user asks to join an open campaign. Roles map: contributor->speaker,
+// validator->verifier. They join on probation and must prove their work.
+export async function requestToJoin(campaignId: string, roles: string[]) {
+  const user = await requireUser();
+  const campaign = await prisma.campaign.findUnique({ where: { id: campaignId } });
+  if (!campaign || campaign.visibility !== "open")
+    throw new Error("This campaign isn't open to join");
+  const wanted = roles
+    .map((r) => (r === "contributor" ? "speaker" : r === "validator" ? "verifier" : r))
+    .filter((r) => r === "speaker" || r === "verifier");
+  if (wanted.length === 0) throw new Error("Pick at least one role");
+
+  for (const role of wanted) {
+    await prisma.membership.upsert({
+      where: { campaignId_userId_role: { campaignId, userId: user.id, role } },
+      update: {},
+      create: { campaignId, userId: user.id, role, status: "probation" },
+    });
+  }
+  redirect(`/app/contribute/${campaignId}`);
+}
+
+export async function decideApplicant(
+  membershipId: string,
+  decision: "approve" | "reject",
+) {
+  const user = await requireUser();
+  const m = await prisma.membership.findUnique({ where: { id: membershipId } });
+  if (!m) throw new Error("Applicant not found");
+  await assertCampaignRole(m.campaignId, user.id, ["owner", "manager"]);
+  await prisma.membership.update({
+    where: { id: membershipId },
+    data: { status: decision === "approve" ? "active" : "rejected" },
+  });
+  revalidatePath(`/app/campaigns/${m.campaignId}/members`);
+}
+
 // ---------- verification ----------
 
 export async function submitVerification(
@@ -261,6 +406,13 @@ export async function submitVerification(
           where: { id: recording.campaignId },
           data: { spentPoints: { increment: reward } },
         });
+      }
+
+      // proof-of-work: maybe promote probation members involved in this clip
+      if (recording.campaign.autoQualify) {
+        await evaluateProbation(tx, recording.campaignId, recording.speakerId);
+        for (const v of verdicts)
+          await evaluateProbation(tx, recording.campaignId, v.verifierId);
       }
     }
   });
