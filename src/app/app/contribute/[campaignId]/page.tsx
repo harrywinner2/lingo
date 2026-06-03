@@ -47,7 +47,7 @@ export default async function ContributeHub({
           {campaign.title}
         </h1>
         <p className="mt-1 text-muted">
-          {langName(campaign.targetLang)} · prompts in{" "}
+          {campaign.targetLangName ?? langName(campaign.targetLang)} · prompts in{" "}
           {langName(campaign.pivotLang)}
         </p>
       </div>

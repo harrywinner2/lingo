@@ -1,5 +1,17 @@
 import Link from "next/link";
-import { Mic, CheckCircle2, Gift, ArrowRight, Globe2, Sparkles } from "lucide-react";
+import {
+  Mic,
+  CheckCircle2,
+  Gift,
+  ArrowRight,
+  Globe2,
+  Sparkles,
+  Languages,
+  Database,
+  Download,
+  ExternalLink,
+  MessageCircle,
+} from "lucide-react";
 import { Logo } from "@/components/logo";
 import { Button } from "@/components/ui/button";
 import { TARGET_LANGUAGES } from "@/lib/languages";
@@ -12,6 +24,11 @@ export default function Home() {
         <div className="mx-auto flex max-w-6xl items-center justify-between px-5 py-3.5">
           <Logo />
           <div className="flex items-center gap-2">
+            <Link href="/translate" className="hidden sm:block">
+              <Button variant="ghost" size="sm">
+                Translate
+              </Button>
+            </Link>
             <Link href="/signin">
               <Button variant="ghost" size="sm">
                 Sign in
@@ -164,15 +181,114 @@ export default function Home() {
         </div>
       </section>
 
+      {/* Heritage / our roots */}
+      <section className="border-t border-line bg-ink text-paper">
+        <div className="mx-auto max-w-6xl px-5 py-16">
+          <span className="inline-flex items-center gap-2 text-sm font-semibold text-primary">
+            <Database className="h-4 w-4" /> Our roots
+          </span>
+          <h2 className="mt-3 max-w-2xl font-display text-3xl font-semibold tracking-tight">
+            We started with text. You can still use it.
+          </h2>
+          <p className="mt-3 max-w-2xl leading-relaxed text-paper/70">
+            Lingo began as <strong className="text-paper">lingo.cm</strong> — a
+            cost-efficient, French-pivot machine-translation service for
+            Cameroonian languages, trained on a text corpus we compiled
+            ourselves (including the open{" "}
+            <code className="rounded bg-white/10 px-1.5 py-0.5">cameroon_bibles</code>{" "}
+            dataset). Those models are open and live. The voice project is the
+            next chapter — but the foundation is yours to use and download.
+          </p>
+
+          <div className="mt-8 grid gap-4 sm:grid-cols-3">
+            <HeritageCard
+              href="/translate"
+              icon={Languages}
+              title="Use the translator"
+              desc="Translate text now, while a worker is online."
+              internal
+            />
+            <HeritageCard
+              href="https://huggingface.co/flagship-ai"
+              icon={Download}
+              title="Models on Hugging Face"
+              desc="Download & run our open Marian models."
+            />
+            <HeritageCard
+              href="https://huggingface.co/datasets/flagship-ai/cameroon_bibles"
+              icon={Database}
+              title="The cameroon_bibles dataset"
+              desc="The compiled corpus behind the models."
+            />
+          </div>
+        </div>
+      </section>
+
       {/* Footer */}
       <footer className="mt-auto border-t border-line bg-card">
-        <div className="mx-auto flex max-w-6xl flex-col items-center justify-between gap-3 px-5 py-8 sm:flex-row">
+        <div className="mx-auto flex max-w-6xl flex-col items-center justify-between gap-4 px-5 py-8 sm:flex-row">
           <Logo />
-          <p className="text-sm text-muted">
-            Built for language preservation · Lingo / NativeAI
-          </p>
+          <div className="flex flex-wrap items-center gap-x-5 gap-y-2 text-sm">
+            <Link href="/translate" className="font-medium text-muted hover:text-ink">
+              Translator
+            </Link>
+            <a
+              href="https://huggingface.co/flagship-ai"
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex items-center gap-1 font-medium text-muted hover:text-ink"
+            >
+              Hugging Face <ExternalLink className="h-3.5 w-3.5" />
+            </a>
+            <a
+              href="https://wa.me/237675112818"
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex items-center gap-1 font-medium text-muted hover:text-ink"
+            >
+              <MessageCircle className="h-3.5 w-3.5" /> WhatsApp
+            </a>
+          </div>
+          <p className="text-sm text-muted">Lingo / NativeAI</p>
         </div>
       </footer>
     </div>
+  );
+}
+
+function HeritageCard({
+  href,
+  icon: Icon,
+  title,
+  desc,
+  internal = false,
+}: {
+  href: string;
+  icon: React.ComponentType<{ className?: string }>;
+  title: string;
+  desc: string;
+  internal?: boolean;
+}) {
+  const inner = (
+    <div className="group h-full rounded-[var(--radius)] border border-white/10 bg-white/5 p-5 transition hover:bg-white/10">
+      <span className="inline-flex h-11 w-11 items-center justify-center rounded-xl bg-primary/20 text-primary">
+        <Icon className="h-5 w-5" />
+      </span>
+      <h3 className="mt-3 flex items-center gap-1.5 font-semibold">
+        {title}
+        {!internal && <ExternalLink className="h-3.5 w-3.5 text-paper/50" />}
+        {internal && (
+          <ArrowRight className="h-4 w-4 text-paper/50 transition group-hover:translate-x-0.5" />
+        )}
+      </h3>
+      <p className="mt-1 text-sm text-paper/60">{desc}</p>
+    </div>
+  );
+  return internal ? (
+    <Link href={href}>{inner}</Link>
+  ) : (
+    <a href={href} target="_blank" rel="noreferrer">
+      {inner}
+    </a>
   );
 }

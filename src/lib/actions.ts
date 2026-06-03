@@ -7,6 +7,7 @@ import { randomBytes } from "node:crypto";
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/session";
 import { awardPoints, getBalance } from "@/lib/points";
+import { slugifyLang } from "@/lib/languages";
 
 // ---------- helpers ----------
 
@@ -37,6 +38,7 @@ const campaignSchema = z.object({
   title: z.string().min(2).max(120),
   description: z.string().max(2000).optional(),
   targetLang: z.string().min(1),
+  targetLangName: z.string().min(1).max(60),
   pivotLang: z.string().min(1).default("en"),
   budgetPoints: z.coerce.number().int().min(0).default(1000),
   rewardRecord: z.coerce.number().int().min(0).default(15),
@@ -55,6 +57,34 @@ export async function createCampaign(input: z.input<typeof campaignSchema>) {
     },
   });
   redirect(`/app/campaigns/${campaign.id}`);
+}
+
+// ---------- languages ----------
+
+const languageSchema = z.object({
+  name: z.string().min(2).max(60),
+  countries: z.array(z.string().max(60)).max(60).default([]),
+});
+
+// Create (or update) a language. A language is just a name + the countries
+// where it's spoken — researchers aren't limited to a fixed list.
+export async function createLanguage(input: z.input<typeof languageSchema>) {
+  const user = await requireUser();
+  const { name, countries } = languageSchema.parse(input);
+  const code = slugifyLang(name);
+  if (!code) throw new Error("Please enter a valid language name");
+  const lang = await prisma.language.upsert({
+    where: { code },
+    update: { name, countries: countries.join(", ") },
+    create: {
+      code,
+      name,
+      countries: countries.join(", "),
+      custom: true,
+      createdById: user.id,
+    },
+  });
+  return { code: lang.code, name: lang.name };
 }
 
 // ---------- prompts ----------

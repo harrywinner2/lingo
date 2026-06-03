@@ -79,7 +79,7 @@ export default async function WalletPage() {
                 <div className="min-w-0 flex-1">
                   <p className="truncate font-semibold">{campaign.title}</p>
                   <p className="text-sm text-muted">
-                    {langName(campaign.targetLang)} · {formatPoints(balance)} pts
+                    {campaign.targetLangName ?? langName(campaign.targetLang)} · {formatPoints(balance)} pts
                   </p>
                 </div>
                 <Link href={`/app/contribute/${campaign.id}/rewards`}>

@@ -36,12 +36,17 @@ export async function GET(req: Request) {
   ).length;
 
   if (!next) return NextResponse.json({ prompt: null, remaining: 0 });
+  const campaign = await prisma.campaign.findUnique({
+    where: { id: campaignId },
+    select: { targetLangName: true },
+  });
   return NextResponse.json({
     prompt: {
       id: next.id,
       pivotText: next.pivotText,
       pivotLang: next.pivotLang,
       targetLang: next.targetLang,
+      targetLangName: campaign?.targetLangName ?? null,
       domain: next.domain,
       sceneDescription: next.sceneDescription,
       imageUrl: next.imageUrl,

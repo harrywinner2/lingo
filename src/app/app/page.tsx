@@ -95,7 +95,7 @@ export default async function Dashboard() {
                     </Badge>
                   </div>
                   <p className="mt-1 text-sm text-muted">
-                    {langName(c.targetLang)} · {c._count.prompts} prompts ·{" "}
+                    {c.targetLangName ?? langName(c.targetLang)} · {c._count.prompts} prompts ·{" "}
                     {c._count.recordings} recordings
                   </p>
                 </Card>
@@ -116,7 +116,7 @@ export default async function Dashboard() {
                   <div>
                     <span className="font-semibold">{m.campaign.title}</span>
                     <p className="mt-0.5 text-sm text-muted">
-                      {langName(m.campaign.targetLang)}
+                      {m.campaign.targetLangName ?? langName(m.campaign.targetLang)}
                     </p>
                   </div>
                   <Badge tone="primary">{m.role}</Badge>

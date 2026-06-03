@@ -63,7 +63,7 @@ export default async function CampaignsPage() {
                     <div>
                       <h3 className="font-semibold">{c.title}</h3>
                       <p className="mt-0.5 text-sm text-muted">
-                        {langName(c.targetLang)}
+                        {c.targetLangName ?? langName(c.targetLang)}
                       </p>
                     </div>
                     <Badge tone={c.status === "active" ? "success" : "neutral"}>

@@ -12,6 +12,18 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+// A language a researcher can target. Built-ins are seeded; researchers can
+// also create their own (just a name + the countries where it's spoken).
+model Language {
+  id          String   @id @default(cuid())
+  code        String   @unique // slug, e.g. "bafia"
+  name        String
+  countries   String   @default("") // comma-separated country names
+  custom      Boolean  @default(false)
+  createdById String?
+  createdAt   DateTime @default(now())
+}
+
 // ---------- Auth.js (NextAuth) ----------
 
 model User {
@@ -78,7 +90,8 @@ model Campaign {
   ownerId     String
   title       String
   description String?
-  targetLang  String // e.g. "bafia"
+  targetLang     String // language code, e.g. "bafia"
+  targetLangName String? // denormalized display name (supports custom languages)
   pivotLang   String   @default("en") // language prompts are presented in
   status      String   @default("active") // draft | active | paused | closed
   budgetPoints  Int    @default(0)

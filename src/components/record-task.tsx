@@ -19,6 +19,7 @@ type Prompt = {
   pivotText: string;
   pivotLang: string;
   targetLang: string;
+  targetLangName?: string | null;
   domain?: string | null;
   sceneDescription?: string | null;
   imageUrl?: string | null;
@@ -207,7 +208,7 @@ export function RecordTask({ campaignId }: { campaignId: string }) {
       <Card className="overflow-hidden">
         <div className="border-b border-line bg-ink px-5 py-3">
           <p className="text-sm font-semibold text-primary">
-            Say this in {langName(prompt.targetLang)}
+            Say this in {prompt.targetLangName ?? langName(prompt.targetLang)}
           </p>
         </div>
         <div className="px-6 py-8 text-center">

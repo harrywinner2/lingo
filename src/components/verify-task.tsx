@@ -21,6 +21,7 @@ type Task = {
   pivotText: string;
   pivotLang: string;
   targetLang: string;
+  targetLangName?: string | null;
 };
 
 export function VerifyTask({ campaignId }: { campaignId: string }) {
@@ -106,7 +107,8 @@ export function VerifyTask({ campaignId }: { campaignId: string }) {
       <Card className="overflow-hidden">
         <div className="border-b border-line bg-ink px-5 py-3">
           <p className="text-sm font-semibold text-primary">
-            Does this clip say the phrase in {langName(task.targetLang)}?
+            Does this clip say the phrase in{" "}
+          {task.targetLangName ?? langName(task.targetLang)}?
           </p>
         </div>
         <div className="px-6 py-7 text-center">

@@ -33,7 +33,7 @@ export async function GET(req: Request) {
       verifications: { none: { verifierId: userId } },
       ...(exclude.length ? { id: { notIn: exclude } } : {}),
     },
-    include: { prompt: true },
+    include: { prompt: true, campaign: { select: { targetLangName: true } } },
     orderBy: { createdAt: "asc" },
   });
 
@@ -54,6 +54,7 @@ export async function GET(req: Request) {
       pivotText: next.prompt.pivotText,
       pivotLang: next.prompt.pivotLang,
       targetLang: next.prompt.targetLang,
+      targetLangName: next.campaign.targetLangName ?? null,
     },
     remaining,
   });

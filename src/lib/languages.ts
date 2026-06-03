@@ -26,3 +26,54 @@ export function langName(code: string) {
     code
   );
 }
+
+export function slugifyLang(name: string) {
+  return name
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 40);
+}
+
+// Countries offered when defining where a language is spoken. Africa-first
+// (where Lingo's languages live today), plus a few common others.
+export const COUNTRIES = [
+  "Cameroon",
+  "Nigeria",
+  "Chad",
+  "Central African Republic",
+  "Gabon",
+  "Equatorial Guinea",
+  "Republic of the Congo",
+  "DR Congo",
+  "Niger",
+  "Ghana",
+  "Côte d'Ivoire",
+  "Benin",
+  "Togo",
+  "Burkina Faso",
+  "Mali",
+  "Senegal",
+  "Guinea",
+  "Sierra Leone",
+  "Liberia",
+  "Sudan",
+  "South Sudan",
+  "Ethiopia",
+  "Kenya",
+  "Uganda",
+  "Tanzania",
+  "Rwanda",
+  "Burundi",
+  "Angola",
+  "Zambia",
+  "Zimbabwe",
+  "Mozambique",
+  "Malawi",
+  "South Africa",
+  "Botswana",
+  "Namibia",
+  "Other",
+] as const;

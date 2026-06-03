@@ -60,7 +60,7 @@ export default async function CampaignOverview({
             </Badge>
           </div>
           <p className="mt-1 text-muted">
-            {langName(campaign.targetLang)} · prompts shown in{" "}
+            {campaign.targetLangName ?? langName(campaign.targetLang)} · prompts shown in{" "}
             {langName(campaign.pivotLang)}
           </p>
           {campaign.description && (

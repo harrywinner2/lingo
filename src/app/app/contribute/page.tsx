@@ -59,7 +59,7 @@ export default async function ContributePage() {
                   <div>
                     <h3 className="font-semibold">{campaign.title}</h3>
                     <p className="mt-0.5 text-sm text-muted">
-                      {langName(campaign.targetLang)}
+                      {campaign.targetLangName ?? langName(campaign.targetLang)}
                     </p>
                   </div>
                 </div>
