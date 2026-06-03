@@ -96,25 +96,34 @@ async function runJobWorkers(
 ): Promise<{ output?: unknown; error?: string }> {
   const { connect } = await importSockets();
   const { hostname, port, username, password } = redisParts();
-  const socket = (connect as any)({ hostname, port });
-  const writer = socket.writable.getWriter();
-  const reader = socket.readable.getReader();
   const jobId = randomUUID();
+  const auth = password ? respCmd("AUTH", username, password) : new Uint8Array(0);
+
+  // A subscribed connection rejects RPUSH, so use two sockets (like
+  // node-redis duplicate()): one subscribes to results, one pushes the job.
+  const sub = (connect as any)({ hostname, port });
+  const pub = (connect as any)({ hostname, port });
+  const subW = sub.writable.getWriter();
+  const subR = sub.readable.getReader();
+  const pubW = pub.writable.getWriter();
 
   try {
-    const startup = [
-      ...(password ? respCmd("AUTH", username, password) : []),
-      ...respCmd("SUBSCRIBE", RESULTS),
-      ...respCmd("RPUSH", JOB_QUEUE, JSON.stringify({ jobId, ...payload })),
-    ];
-    await writer.write(new Uint8Array(startup));
+    await subW.write(
+      new Uint8Array([...auth, ...respCmd("SUBSCRIBE", RESULTS)]),
+    );
+    await pubW.write(
+      new Uint8Array([
+        ...auth,
+        ...respCmd("RPUSH", JOB_QUEUE, JSON.stringify({ jobId, ...payload })),
+      ]),
+    );
 
     let buf = new Uint8Array(0);
     const deadline = Date.now() + timeoutMs;
     while (Date.now() < deadline) {
       const remaining = deadline - Date.now();
       const read = await Promise.race([
-        reader.read(),
+        subR.read(),
         new Promise<{ timeout: true }>((r) => setTimeout(() => r({ timeout: true }), remaining)),
       ]);
       if ((read as any).timeout) break;
@@ -128,7 +137,6 @@ async function runJobWorkers(
         if (!r) break;
         const [val, nextPos] = r;
         pos = nextPos;
-        // pub/sub message: ["message", "results", payload]
         if (Array.isArray(val) && val[0] === "message" && val[1] === RESULTS) {
           try {
             const data = JSON.parse(val[2]);
@@ -142,15 +150,19 @@ async function runJobWorkers(
     }
     throw new Error("timeout");
   } finally {
-    try {
-      await writer.close();
-    } catch {
-      /* ignore */
+    for (const w of [subW, pubW]) {
+      try {
+        await w.close();
+      } catch {
+        /* ignore */
+      }
     }
-    try {
-      socket.close();
-    } catch {
-      /* ignore */
+    for (const s of [sub, pub]) {
+      try {
+        s.close();
+      } catch {
+        /* ignore */
+      }
     }
   }
 }

@@ -1,25 +1,47 @@
-// Faithful to the original lingo.cm translator.
+// The translator discovers its languages from the worker's live model list
+// (model repos are named "<from>-<to>", e.g. "francais-ewondo"), so the UI
+// always matches whatever models the worker currently serves.
 
-export const TRANSLATE_LANGS = [
-  { code: "bulu", name: "Bulu" },
-  { code: "francais", name: "Français" },
-  { code: "fufulde", name: "Fufulde" },
-  { code: "ghomala", name: "Ghomala" },
-  { code: "pinyin", name: "Pinyin" },
-] as const;
-
-// Pivot through French, exactly like the original script.js.
-export function buildChain(source: string, target: string): string[] | null {
-  if (!source || !target || source === target) return null;
-  if (source === "francais" || target === "francais") return [`${source}-${target}`];
-  return [`${source}-francais`, `francais-${target}`];
+export function parseModels(models: string[]) {
+  const pairs = new Set<string>();
+  const langs = new Set<string>();
+  for (const m of models) {
+    const i = m.indexOf("-");
+    if (i <= 0) continue;
+    const from = m.slice(0, i);
+    const to = m.slice(i + 1);
+    if (!from || !to) continue;
+    pairs.add(m);
+    langs.add(from);
+    langs.add(to);
+  }
+  return { pairs, langs: [...langs].sort((a, b) => tName(a).localeCompare(tName(b))) };
 }
+
+// Pivot through French when there's no direct model, exactly like old lingo.cm.
+export function buildChain(
+  pairs: Set<string>,
+  source: string,
+  target: string,
+): string[] | null {
+  if (!source || !target || source === target) return null;
+  if (pairs.has(`${source}-${target}`)) return [`${source}-${target}`];
+  if (pairs.has(`${source}-francais`) && pairs.has(`francais-${target}`))
+    return [`${source}-francais`, `francais-${target}`];
+  return null;
+}
+
+const SPECIAL: Record<string, string> = {
+  francais: "Français",
+  english: "English",
+  anglais: "English",
+};
 
 export function tName(code: string) {
-  return TRANSLATE_LANGS.find((l) => l.code === code)?.name ?? code;
+  return SPECIAL[code] ?? code.charAt(0).toUpperCase() + code.slice(1);
 }
 
-// The original AGLC virtual keyboard characters.
+// Original AGLC virtual-keyboard characters.
 export const AGLC_CHARS = [
   "́", "ŋ", "̌", "ɑ", "ɛ", "–", "ə", "3", "ɔ", "'", "̀", "ʉ", "Ə", "Ŋ",
 ];

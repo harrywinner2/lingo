@@ -17,7 +17,7 @@ import { Logo } from "@/components/logo";
 import { Button } from "@/components/ui/button";
 import { Card, Select, Textarea } from "@/components/ui/primitives";
 import {
-  TRANSLATE_LANGS,
+  parseModels,
   buildChain,
   tName,
   AGLC_CHARS,
@@ -30,8 +30,10 @@ type Status = "loading" | "online" | "offline";
 export default function TranslatePage() {
   const [status, setStatus] = useState<Status>("loading");
   const [checking, setChecking] = useState(false);
-  const [source, setSource] = useState("francais");
-  const [target, setTarget] = useState("ghomala");
+  const [langs, setLangs] = useState<string[]>([]);
+  const [pairs, setPairs] = useState<Set<string>>(new Set());
+  const [source, setSource] = useState("");
+  const [target, setTarget] = useState("");
   const [text, setText] = useState("");
   const [output, setOutput] = useState("");
   const [comment, setComment] = useState<string | null>(null);
@@ -45,7 +47,16 @@ export default function TranslatePage() {
     try {
       const res = await fetch("/api/translate/status", { cache: "no-store" });
       const data = await res.json();
-      setStatus(data.online ? "online" : "offline");
+      if (data.online && data.models?.length) {
+        const { pairs, langs } = parseModels(data.models);
+        setPairs(pairs);
+        setLangs(langs);
+        setStatus("online");
+        setSource((s) => s || (langs.includes("francais") ? "francais" : langs[0]));
+        setTarget((t) => t || langs.find((l) => l !== "francais") || langs[1] || "");
+      } else {
+        setStatus("offline");
+      }
     } catch {
       setStatus("offline");
     } finally {
@@ -56,6 +67,8 @@ export default function TranslatePage() {
   useEffect(() => {
     checkStatus();
   }, [checkStatus]);
+
+  const chain = buildChain(pairs, source, target);
 
   function insertChar(ch: string) {
     const ta = taRef.current;
@@ -78,12 +91,7 @@ export default function TranslatePage() {
   }
 
   async function doTranslate() {
-    const chain = buildChain(source, target);
-    if (!chain) {
-      setError("Choose two different languages.");
-      return;
-    }
-    if (!text.trim()) return;
+    if (!chain || !text.trim()) return;
     setBusy(true);
     setError(null);
     setOutput("");
@@ -98,7 +106,6 @@ export default function TranslatePage() {
       if (!res.ok) throw new Error(data.error || "Translation failed");
       setOutput(data.output);
       setComment(commentUrl(chain, text, data.output));
-      if (status !== "online") setStatus("online");
     } catch (e) {
       setError(
         e instanceof Error && e.message.includes("respond")
@@ -111,6 +118,8 @@ export default function TranslatePage() {
       setBusy(false);
     }
   }
+
+  const online = status === "online";
 
   return (
     <div className="bg-grain flex min-h-full flex-col">
@@ -141,7 +150,6 @@ export default function TranslatePage() {
           </p>
         </div>
 
-        {/* earn banner (original Google Form) */}
         <a href={EARN_FORM_URL} target="_blank" rel="noreferrer" className="block">
           <div className="mb-5 flex items-center justify-center gap-2 rounded-xl bg-accent px-4 py-2.5 text-sm font-semibold text-white shadow-soft transition hover:bg-accent-600">
             <Star className="h-4 w-4" /> Aidez-nous à traduire votre langue, et
@@ -149,38 +157,59 @@ export default function TranslatePage() {
           </div>
         </a>
 
-        <Card className="overflow-hidden">
+        {status === "offline" && (
+          <Card className="mb-5 flex items-center gap-3 border-warning/30 bg-warning/5 p-4">
+            <WifiOff className="h-5 w-5 text-warning" />
+            <p className="text-sm">
+              The translation server is asleep. Languages and translation light up
+              automatically when it&apos;s back online.
+            </p>
+          </Card>
+        )}
+
+        <Card className={`overflow-hidden ${online ? "" : "opacity-60"}`}>
           <div className="flex items-center gap-2 border-b border-line bg-paper/60 p-3">
             <Select
               value={source}
               onChange={(e) => setSource(e.target.value)}
+              disabled={!online}
               className="h-10 border-0 bg-transparent font-semibold focus:ring-0"
             >
-              {TRANSLATE_LANGS.map((l) => (
-                <option key={l.code} value={l.code}>
-                  {l.name}
+              {langs.length === 0 && <option>—</option>}
+              {langs.map((l) => (
+                <option key={l} value={l}>
+                  {tName(l)}
                 </option>
               ))}
             </Select>
             <button
               onClick={swap}
-              aria-label="Swap languages"
-              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-muted transition hover:bg-black/5 hover:text-ink"
+              disabled={!online}
+              aria-label="Swap"
+              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-muted transition hover:bg-black/5 hover:text-ink disabled:opacity-40"
             >
               <ArrowRightLeft className="h-4 w-4" />
             </button>
             <Select
               value={target}
               onChange={(e) => setTarget(e.target.value)}
+              disabled={!online}
               className="h-10 border-0 bg-transparent font-semibold focus:ring-0"
             >
-              {TRANSLATE_LANGS.map((l) => (
-                <option key={l.code} value={l.code}>
-                  {l.name}
+              {langs.length === 0 && <option>—</option>}
+              {langs.map((l) => (
+                <option key={l} value={l}>
+                  {tName(l)}
                 </option>
               ))}
             </Select>
           </div>
+
+          {source && target && !chain && online && (
+            <p className="border-b border-line bg-warning/10 px-4 py-2 text-sm text-warning">
+              No model path between {tName(source)} and {tName(target)}.
+            </p>
+          )}
 
           <div className="p-4">
             <Textarea
@@ -189,6 +218,7 @@ export default function TranslatePage() {
               value={text}
               onChange={(e) => setText(e.target.value)}
               placeholder="Texte à traduire…"
+              disabled={!online}
               className="border-0 px-0 text-lg focus:ring-0"
             />
             <div className="mt-3 flex flex-wrap items-center gap-1.5">
@@ -202,7 +232,8 @@ export default function TranslatePage() {
                     key={i}
                     type="button"
                     onClick={() => insertChar(c)}
-                    className="h-8 min-w-8 rounded-lg border border-line bg-card px-2 text-sm font-medium transition hover:border-primary/60 hover:bg-paper"
+                    disabled={!online}
+                    className="h-8 min-w-8 rounded-lg border border-line bg-card px-2 text-sm font-medium transition hover:border-primary/60 hover:bg-paper disabled:opacity-40"
                   >
                     {combining ? "◌" + c : c}
                   </button>
@@ -270,7 +301,7 @@ export default function TranslatePage() {
               className="w-full"
               size="lg"
               onClick={doTranslate}
-              disabled={busy || !text.trim() || source === target}
+              disabled={!online || !chain || !text.trim() || busy}
             >
               {busy ? (
                 <>
