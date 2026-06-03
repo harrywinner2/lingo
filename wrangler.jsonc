@@ -12,7 +12,7 @@
     {
       "binding": "DB",
       "database_name": "lingo-db",
-      "database_id": "REPLACE_WITH_D1_DATABASE_ID",
+      "database_id": "5aab3d3e-1b0c-443f-a6ac-e92b5f22f8f9",
       "migrations_dir": "drizzle"
     }
   ],
@@ -22,6 +22,10 @@
       "bucket_name": "lingo-audio"
     }
   ],
+  "vars": {
+    "EMAIL_FROM": "Lingo <noreply@lingo.cm>",
+    "AUTH_DEV_LOGIN": "false"
+  },
   "observability": {
     "enabled": true
   }
