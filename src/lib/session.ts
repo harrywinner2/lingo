@@ -1,11 +1,18 @@
 import { redirect } from "next/navigation";
+import { eq } from "drizzle-orm";
 import { auth } from "@/auth";
-import { prisma } from "@/lib/prisma";
+import { getDb, users } from "@/db";
 
 export async function getCurrentUser() {
   const session = await auth();
   if (!session?.user?.id) return null;
-  return prisma.user.findUnique({ where: { id: session.user.id } });
+  const db = await getDb();
+  const rows = await db
+    .select()
+    .from(users)
+    .where(eq(users.id, session.user.id))
+    .limit(1);
+  return rows[0] ?? null;
 }
 
 export async function requireUser() {

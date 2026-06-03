@@ -1,7 +1,14 @@
 import Link from "next/link";
 import { Plus, Megaphone } from "lucide-react";
+import { and, eq, inArray, desc, count } from "drizzle-orm";
 import { requireUser } from "@/lib/session";
-import { prisma } from "@/lib/prisma";
+import {
+  getDb,
+  memberships,
+  campaigns as campaignsTable,
+  prompts,
+  recordings,
+} from "@/db";
 import { Button } from "@/components/ui/button";
 import { Card, Badge } from "@/components/ui/primitives";
 import { langName } from "@/lib/languages";
@@ -9,16 +16,41 @@ import { formatPoints } from "@/lib/utils";
 
 export default async function CampaignsPage() {
   const user = await requireUser();
-  const memberships = await prisma.membership.findMany({
-    where: { userId: user.id, role: { in: ["owner", "manager"] } },
-    include: {
-      campaign: {
-        include: { _count: { select: { prompts: true, recordings: true } } },
-      },
-    },
-    orderBy: { createdAt: "desc" },
-  });
-  const campaigns = memberships.map((m) => ({ ...m.campaign, myRole: m.role }));
+  const db = await getDb();
+  const mships = await db
+    .select({ campaign: campaignsTable, role: memberships.role })
+    .from(memberships)
+    .innerJoin(campaignsTable, eq(memberships.campaignId, campaignsTable.id))
+    .where(
+      and(
+        eq(memberships.userId, user.id),
+        inArray(memberships.role, ["owner", "manager"]),
+      ),
+    )
+    .orderBy(desc(memberships.createdAt));
+
+  const ids = mships.map((m: any) => m.campaign.id);
+  const pc = new Map<string, number>();
+  const rc = new Map<string, number>();
+  if (ids.length) {
+    for (const r of await db
+      .select({ cid: prompts.campaignId, c: count() })
+      .from(prompts)
+      .where(inArray(prompts.campaignId, ids))
+      .groupBy(prompts.campaignId))
+      pc.set((r as any).cid, Number((r as any).c));
+    for (const r of await db
+      .select({ cid: recordings.campaignId, c: count() })
+      .from(recordings)
+      .where(inArray(recordings.campaignId, ids))
+      .groupBy(recordings.campaignId))
+      rc.set((r as any).cid, Number((r as any).c));
+  }
+  const campaigns = mships.map((m: any) => ({
+    ...m.campaign,
+    myRole: m.role,
+    _count: { prompts: pc.get(m.campaign.id) ?? 0, recordings: rc.get(m.campaign.id) ?? 0 },
+  }));
 
   return (
     <div className="space-y-6">

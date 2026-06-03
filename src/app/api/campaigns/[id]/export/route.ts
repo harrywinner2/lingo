@@ -1,9 +1,9 @@
 import { NextResponse } from "next/server";
+import { and, eq, asc } from "drizzle-orm";
 import { auth } from "@/auth";
-import { prisma } from "@/lib/prisma";
+import { getDb, campaigns, recordings, prompts } from "@/db";
+import { isMember } from "@/lib/membership";
 
-// Exports accepted recordings as a JSON manifest (audio URL + prompt + score).
-// This is the seed of the training-dataset export described in the v2 plan.
 export async function GET(
   req: Request,
   { params }: { params: Promise<{ id: string }> },
@@ -12,27 +12,29 @@ export async function GET(
   const session = await auth();
   if (!session?.user?.id)
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-
-  const canManage =
-    (await prisma.campaign.findFirst({
-      where: { id, ownerId: session.user.id },
-    })) !== null ||
-    (await prisma.membership.findFirst({
-      where: {
-        campaignId: id,
-        userId: session.user.id,
-        role: { in: ["owner", "manager"] },
-      },
-    })) !== null;
-  if (!canManage)
+  if (!(await isMember(id, session.user.id, ["owner", "manager"])))
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
-  const campaign = await prisma.campaign.findUnique({ where: { id } });
-  const recordings = await prisma.recording.findMany({
-    where: { campaignId: id, status: "accepted" },
-    include: { prompt: true },
-    orderBy: { createdAt: "asc" },
-  });
+  const db = await getDb();
+  const campaign = (
+    await db.select().from(campaigns).where(eq(campaigns.id, id)).limit(1)
+  )[0];
+  const rows = await db
+    .select({
+      id: recordings.id,
+      audioUrl: recordings.audioUrl,
+      mimeType: recordings.mimeType,
+      durationMs: recordings.durationMs,
+      score: recordings.score,
+      pivotText: prompts.pivotText,
+      pivotLang: prompts.pivotLang,
+      targetLang: prompts.targetLang,
+      domain: prompts.domain,
+    })
+    .from(recordings)
+    .innerJoin(prompts, eq(recordings.promptId, prompts.id))
+    .where(and(eq(recordings.campaignId, id), eq(recordings.status, "accepted")))
+    .orderBy(asc(recordings.createdAt));
 
   const origin = new URL(req.url).origin;
   const manifest = {
@@ -43,18 +45,8 @@ export async function GET(
       pivotLang: campaign?.pivotLang,
     },
     exportedAt: new Date().toISOString(),
-    count: recordings.length,
-    items: recordings.map((r) => ({
-      id: r.id,
-      audioUrl: origin + r.audioUrl,
-      mimeType: r.mimeType,
-      durationMs: r.durationMs,
-      score: r.score,
-      pivotText: r.prompt.pivotText,
-      pivotLang: r.prompt.pivotLang,
-      targetLang: r.prompt.targetLang,
-      domain: r.prompt.domain,
-    })),
+    count: rows.length,
+    items: rows.map((r: any) => ({ ...r, audioUrl: origin + r.audioUrl })),
   };
 
   return new NextResponse(JSON.stringify(manifest, null, 2), {

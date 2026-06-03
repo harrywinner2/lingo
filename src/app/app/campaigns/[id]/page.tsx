@@ -1,8 +1,10 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ArrowLeft, FileText, Users, Download, Mic, Gift, Wallet } from "lucide-react";
+import { and, eq, count } from "drizzle-orm";
 import { requireUser } from "@/lib/session";
-import { prisma } from "@/lib/prisma";
+import { getDb, campaigns, prompts, recordings, memberships } from "@/db";
+import { isMember } from "@/lib/membership";
 import { Card, Badge } from "@/components/ui/primitives";
 import { Button } from "@/components/ui/button";
 import { langName } from "@/lib/languages";
@@ -15,26 +17,27 @@ export default async function CampaignOverview({
 }) {
   const { id } = await params;
   const user = await requireUser();
+  const db = await getDb();
 
-  const campaign = await prisma.campaign.findUnique({
-    where: { id },
-    include: {
-      _count: { select: { prompts: true, recordings: true, memberships: true } },
-    },
-  });
-  if (!campaign) notFound();
+  const campaignRow = (
+    await db.select().from(campaigns).where(eq(campaigns.id, id)).limit(1)
+  )[0];
+  if (!campaignRow) notFound();
+  if (!(await isMember(id, user.id, ["owner", "manager"]))) notFound();
 
-  const canManage =
-    campaign.ownerId === user.id ||
-    (await prisma.membership.findFirst({
-      where: { campaignId: id, userId: user.id, role: { in: ["owner", "manager"] } },
-    })) !== null;
-  if (!canManage) notFound();
-
-  const [accepted, ready] = await Promise.all([
-    prisma.recording.count({ where: { campaignId: id, status: "accepted" } }),
-    prisma.recording.count({ where: { campaignId: id, status: "ready" } }),
+  const cnt = async (tbl: any, where: any) =>
+    Number((await db.select({ c: count() }).from(tbl).where(where))[0].c);
+  const [promptN, recN, memberN, accepted, ready] = await Promise.all([
+    cnt(prompts, eq(prompts.campaignId, id)),
+    cnt(recordings, eq(recordings.campaignId, id)),
+    cnt(memberships, eq(memberships.campaignId, id)),
+    cnt(recordings, and(eq(recordings.campaignId, id), eq(recordings.status, "accepted"))),
+    cnt(recordings, and(eq(recordings.campaignId, id), eq(recordings.status, "ready"))),
   ]);
+  const campaign = {
+    ...campaignRow,
+    _count: { prompts: promptN, recordings: recN, memberships: memberN },
+  };
 
   const pct = campaign.budgetPoints
     ? Math.min(100, Math.round((campaign.spentPoints / campaign.budgetPoints) * 100))

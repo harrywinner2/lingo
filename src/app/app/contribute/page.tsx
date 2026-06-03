@@ -1,24 +1,23 @@
 import Link from "next/link";
 import { Mic } from "lucide-react";
+import { eq } from "drizzle-orm";
 import { requireUser } from "@/lib/session";
-import { prisma } from "@/lib/prisma";
+import { getDb, memberships } from "@/db";
 import { Card, Badge } from "@/components/ui/primitives";
 import { langName } from "@/lib/languages";
 
 export default async function ContributePage() {
   const user = await requireUser();
-  const memberships = await prisma.membership.findMany({
-    where: { userId: user.id },
-    include: { campaign: true },
-    orderBy: { createdAt: "desc" },
+  const db = await getDb();
+  const rows = await db.query.memberships.findMany({
+    where: eq(memberships.userId, user.id),
+    with: { campaign: true },
+    orderBy: (m: any, ops: any) => ops.desc(m.createdAt),
   });
 
   // group roles per campaign
-  const byCampaign = new Map<
-    string,
-    { campaign: (typeof memberships)[number]["campaign"]; roles: string[] }
-  >();
-  for (const m of memberships) {
+  const byCampaign = new Map<string, { campaign: any; roles: string[] }>();
+  for (const m of rows) {
     const entry = byCampaign.get(m.campaignId) ?? {
       campaign: m.campaign,
       roles: [],

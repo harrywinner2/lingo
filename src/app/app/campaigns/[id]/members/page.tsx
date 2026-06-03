@@ -1,32 +1,59 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ArrowLeft, UserCheck } from "lucide-react";
+import { and, eq, inArray, desc, count, isNull } from "drizzle-orm";
 import { requireUser } from "@/lib/session";
-import { prisma } from "@/lib/prisma";
+import {
+  getDb,
+  campaigns,
+  memberships,
+  verifications,
+  recordings,
+  invites as invitesTable,
+} from "@/db";
+import { isMember } from "@/lib/membership";
 import { Card, Badge } from "@/components/ui/primitives";
 import { InviteManager } from "@/components/invite-manager";
 import { ParticipantImport } from "@/components/participant-import";
 import { CampaignAccess } from "@/components/campaign-access";
 import { ApplicantActions } from "@/components/applicant-actions";
 
-async function applicantStats(campaignId: string, userId: string, role: string) {
+/* eslint-disable @typescript-eslint/no-explicit-any */
+async function applicantStats(
+  db: any,
+  campaignId: string,
+  userId: string,
+  role: string,
+) {
+  const cnt = async (where: any) =>
+    Number((await db.select({ c: count() }).from(recordings).where(where))[0].c);
   if (role === "speaker") {
-    const [accepted, total] = await Promise.all([
-      prisma.recording.count({ where: { campaignId, speakerId: userId, status: "accepted" } }),
-      prisma.recording.count({ where: { campaignId, speakerId: userId } }),
-    ]);
+    const accepted = await cnt(
+      and(
+        eq(recordings.campaignId, campaignId),
+        eq(recordings.speakerId, userId),
+        eq(recordings.status, "accepted"),
+      ),
+    );
+    const total = await cnt(
+      and(eq(recordings.campaignId, campaignId), eq(recordings.speakerId, userId)),
+    );
     return `${accepted} accepted · ${total} recorded`;
   }
-  const vs = await prisma.verification.findMany({
-    where: {
-      verifierId: userId,
-      recording: { campaignId, status: { in: ["accepted", "rejected"] } },
-    },
-    include: { recording: { select: { status: true } } },
-  });
+  const vs = await db
+    .select({ verdict: verifications.verdict, status: recordings.status })
+    .from(verifications)
+    .innerJoin(recordings, eq(verifications.recordingId, recordings.id))
+    .where(
+      and(
+        eq(verifications.verifierId, userId),
+        eq(recordings.campaignId, campaignId),
+        inArray(recordings.status, ["accepted", "rejected"]),
+      ),
+    );
   if (vs.length === 0) return "no verifications yet";
   const agree = vs.filter(
-    (v) => (v.verdict !== "incorrect") === (v.recording.status === "accepted"),
+    (v: any) => (v.verdict !== "incorrect") === (v.status === "accepted"),
   ).length;
   return `${vs.length} verified · ${Math.round((agree / vs.length) * 100)}% agreement`;
 }
@@ -38,37 +65,36 @@ export default async function MembersPage({
 }) {
   const { id } = await params;
   const user = await requireUser();
+  const db = await getDb();
 
-  const campaign = await prisma.campaign.findUnique({ where: { id } });
+  const campaign = (
+    await db.select().from(campaigns).where(eq(campaigns.id, id)).limit(1)
+  )[0];
   if (!campaign) notFound();
-  const canManage =
-    campaign.ownerId === user.id ||
-    (await prisma.membership.findFirst({
-      where: { campaignId: id, userId: user.id, role: { in: ["owner", "manager"] } },
-    })) !== null;
-  if (!canManage) notFound();
+  if (!(await isMember(id, user.id, ["owner", "manager"]))) notFound();
 
   const [members, applicants, invites] = await Promise.all([
-    prisma.membership.findMany({
-      where: { campaignId: id, status: "active" },
-      include: { user: true },
-      orderBy: { createdAt: "asc" },
+    db.query.memberships.findMany({
+      where: and(eq(memberships.campaignId, id), eq(memberships.status, "active")),
+      with: { user: true },
+      orderBy: (m: any, o: any) => o.asc(m.createdAt),
     }),
-    prisma.membership.findMany({
-      where: { campaignId: id, status: "probation" },
-      include: { user: true },
-      orderBy: { createdAt: "asc" },
+    db.query.memberships.findMany({
+      where: and(eq(memberships.campaignId, id), eq(memberships.status, "probation")),
+      with: { user: true },
+      orderBy: (m: any, o: any) => o.asc(m.createdAt),
     }),
-    prisma.invite.findMany({
-      where: { campaignId: id, usedAt: null },
-      orderBy: { createdAt: "desc" },
-    }),
+    db
+      .select()
+      .from(invitesTable)
+      .where(and(eq(invitesTable.campaignId, id), isNull(invitesTable.usedAt)))
+      .orderBy(desc(invitesTable.createdAt)),
   ]);
 
   const applicantsWithStats = await Promise.all(
-    applicants.map(async (a) => ({
+    applicants.map(async (a: any) => ({
       ...a,
-      stats: await applicantStats(id, a.userId, a.role),
+      stats: await applicantStats(db, id, a.userId, a.role),
     })),
   );
 

@@ -1,8 +1,10 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ArrowLeft } from "lucide-react";
+import { eq, desc, count, inArray } from "drizzle-orm";
 import { requireUser } from "@/lib/session";
-import { prisma } from "@/lib/prisma";
+import { getDb, prompts as promptsTable, recordings } from "@/db";
+import { isMember } from "@/lib/membership";
 import { Card, Badge } from "@/components/ui/primitives";
 import { CsvImporter } from "@/components/csv-importer";
 import { QuickAddPrompt } from "@/components/quick-add-prompt";
@@ -14,22 +16,28 @@ export default async function PromptsPage({
 }) {
   const { id } = await params;
   const user = await requireUser();
+  if (!(await isMember(id, user.id, ["owner", "manager"]))) notFound();
 
-  const canManage =
-    (await prisma.campaign.findFirst({
-      where: { id, ownerId: user.id },
-    })) !== null ||
-    (await prisma.membership.findFirst({
-      where: { campaignId: id, userId: user.id, role: { in: ["owner", "manager"] } },
-    })) !== null;
-  if (!canManage) notFound();
-
-  const prompts = await prisma.prompt.findMany({
-    where: { campaignId: id },
-    orderBy: { createdAt: "desc" },
-    include: { _count: { select: { recordings: true } } },
-    take: 200,
-  });
+  const db = await getDb();
+  const rows = await db
+    .select()
+    .from(promptsTable)
+    .where(eq(promptsTable.campaignId, id))
+    .orderBy(desc(promptsTable.createdAt))
+    .limit(200);
+  const ids = rows.map((p: any) => p.id);
+  const rc = new Map<string, number>();
+  if (ids.length)
+    for (const r of await db
+      .select({ pid: recordings.promptId, c: count() })
+      .from(recordings)
+      .where(inArray(recordings.promptId, ids))
+      .groupBy(recordings.promptId))
+      rc.set((r as any).pid, Number((r as any).c));
+  const prompts = rows.map((p: any) => ({
+    ...p,
+    _count: { recordings: rc.get(p.id) ?? 0 },
+  }));
 
   return (
     <div className="space-y-6">

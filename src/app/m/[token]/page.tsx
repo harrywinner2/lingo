@@ -1,4 +1,5 @@
-import { prisma } from "@/lib/prisma";
+import { eq } from "drizzle-orm";
+import { getDb, magicLinks, campaigns } from "@/db";
 import { Logo } from "@/components/logo";
 import { Card } from "@/components/ui/primitives";
 import { MagicSignIn } from "@/components/magic-signin";
@@ -9,10 +10,20 @@ export default async function MagicLinkPage({
   params: Promise<{ token: string }>;
 }) {
   const { token } = await params;
-  const link = await prisma.magicLink.findUnique({
-    where: { token },
-    include: { campaign: true },
-  });
+  const db = await getDb();
+  const link = (
+    await db
+      .select({
+        campaignId: magicLinks.campaignId,
+        name: magicLinks.name,
+        expiresAt: magicLinks.expiresAt,
+        campaignTitle: campaigns.title,
+      })
+      .from(magicLinks)
+      .leftJoin(campaigns, eq(magicLinks.campaignId, campaigns.id))
+      .where(eq(magicLinks.token, token))
+      .limit(1)
+  )[0];
 
   const valid = link && (!link.expiresAt || link.expiresAt > new Date());
 
@@ -27,7 +38,7 @@ export default async function MagicLinkPage({
             <MagicSignIn
               token={token}
               campaignId={link.campaignId}
-              campaignTitle={link.campaign.title}
+              campaignTitle={link.campaignTitle ?? "this campaign"}
               name={link.name}
             />
           ) : (

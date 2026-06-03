@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { randomBytes } from "node:crypto";
+import { and, eq, inArray } from "drizzle-orm";
 import { auth } from "@/auth";
-import { prisma } from "@/lib/prisma";
+import { getDb, prompts, campaigns, memberships, recordings } from "@/db";
 import { putObject } from "@/lib/storage";
 import { preprocessingEnabled, enqueuePreprocess } from "@/lib/queue";
 
@@ -10,6 +11,7 @@ export async function POST(req: Request) {
   if (!session?.user?.id)
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const userId = session.user.id;
+  const db = await getDb();
 
   const form = await req.formData();
   const file = form.get("audio");
@@ -21,24 +23,31 @@ export async function POST(req: Request) {
   if (file.size > 15 * 1024 * 1024)
     return NextResponse.json({ error: "File too large" }, { status: 413 });
 
-  const prompt = await prisma.prompt.findUnique({ where: { id: promptId } });
+  const prompt = (
+    await db.select().from(prompts).where(eq(prompts.id, promptId)).limit(1)
+  )[0];
   if (!prompt)
     return NextResponse.json({ error: "Prompt not found" }, { status: 404 });
 
-  // must be a speaker (or owner/manager) of the campaign
-  const campaign = await prisma.campaign.findUnique({
-    where: { id: prompt.campaignId },
-  });
+  const campaign = (
+    await db.select().from(campaigns).where(eq(campaigns.id, prompt.campaignId)).limit(1)
+  )[0];
   const allowed =
     campaign?.ownerId === userId ||
-    (await prisma.membership.findFirst({
-      where: {
-        campaignId: prompt.campaignId,
-        userId,
-        role: { in: ["owner", "manager", "speaker"] },
-        status: "active",
-      },
-    }));
+    (
+      await db
+        .select({ id: memberships.id })
+        .from(memberships)
+        .where(
+          and(
+            eq(memberships.campaignId, prompt.campaignId),
+            eq(memberships.userId, userId),
+            inArray(memberships.role, ["owner", "manager", "speaker"]),
+            inArray(memberships.status, ["active", "probation"]),
+          ),
+        )
+        .limit(1)
+    ).length > 0;
   if (!allowed)
     return NextResponse.json({ error: "Not a speaker on this campaign" }, { status: 403 });
 
@@ -54,31 +63,31 @@ export async function POST(req: Request) {
   const buf = Buffer.from(await file.arrayBuffer());
   const url = await putObject(rawKey, buf, type);
 
-  // With a preprocessing worker, the clip starts as "processing" and becomes
-  // "ready" once normalized. Without one, it's immediately ready (dev/pilot).
   const willPreprocess = preprocessingEnabled();
-  const recording = await prisma.recording.create({
-    data: {
-      promptId,
-      campaignId: prompt.campaignId,
-      speakerId: userId,
-      audioUrl: url,
-      rawKey,
-      mimeType: type,
-      durationMs: Number.isFinite(durationMs) ? Math.round(durationMs) : 0,
-      status: willPreprocess ? "processing" : "ready",
-    },
-  });
+  const recording = (
+    await db
+      .insert(recordings)
+      .values({
+        promptId,
+        campaignId: prompt.campaignId,
+        speakerId: userId,
+        audioUrl: url,
+        rawKey,
+        mimeType: type,
+        durationMs: Number.isFinite(durationMs) ? Math.round(durationMs) : 0,
+        status: willPreprocess ? "processing" : "ready",
+      })
+      .returning()
+  )[0];
 
   if (willPreprocess) {
     try {
       await enqueuePreprocess({ recordingId: recording.id, rawKey, mimeType: type });
     } catch {
-      // If the queue is down, leave it ready so it can still be verified.
-      await prisma.recording.update({
-        where: { id: recording.id },
-        data: { status: "ready" },
-      });
+      await db
+        .update(recordings)
+        .set({ status: "ready" })
+        .where(eq(recordings.id, recording.id));
     }
   }
 

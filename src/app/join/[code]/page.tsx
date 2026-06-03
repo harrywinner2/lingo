@@ -1,7 +1,8 @@
 import { redirect } from "next/navigation";
 import { Mic } from "lucide-react";
+import { eq } from "drizzle-orm";
 import { getCurrentUser } from "@/lib/session";
-import { prisma } from "@/lib/prisma";
+import { getDb, invites, campaigns } from "@/db";
 import { joinByCode } from "@/lib/actions";
 import { Logo } from "@/components/logo";
 import { Button } from "@/components/ui/button";
@@ -17,10 +18,20 @@ export default async function JoinPage({
   const user = await getCurrentUser();
   if (!user) redirect(`/signin?callbackUrl=/join/${code}`);
 
-  const invite = await prisma.invite.findUnique({
-    where: { code },
-    include: { campaign: true },
-  });
+  const db = await getDb();
+  const invite = (
+    await db
+      .select({
+        role: invites.role,
+        campaignTitle: campaigns.title,
+        targetLang: campaigns.targetLang,
+        targetLangName: campaigns.targetLangName,
+      })
+      .from(invites)
+      .leftJoin(campaigns, eq(invites.campaignId, campaigns.id))
+      .where(eq(invites.code, code))
+      .limit(1)
+  )[0];
 
   if (!invite) {
     return (
@@ -37,10 +48,10 @@ export default async function JoinPage({
         <Mic className="h-7 w-7" />
       </span>
       <h1 className="font-display text-2xl font-semibold">
-        Join “{invite.campaign.title}”
+        Join “{invite.campaignTitle}”
       </h1>
       <p className="text-muted">
-        {langName(invite.campaign.targetLang)} · you&apos;ve been invited as a{" "}
+        {invite.targetLangName ?? langName(invite.targetLang ?? "")} · you&apos;ve been invited as a{" "}
         <Badge tone="primary">{invite.role}</Badge>
       </p>
       <form

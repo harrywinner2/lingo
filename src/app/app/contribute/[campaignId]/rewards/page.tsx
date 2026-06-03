@@ -1,8 +1,9 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ArrowLeft, Coins } from "lucide-react";
+import { and, eq, asc, desc } from "drizzle-orm";
 import { requireUser } from "@/lib/session";
-import { prisma } from "@/lib/prisma";
+import { getDb, campaigns, rewards as rewardsTable, redemptions } from "@/db";
 import { isMember } from "@/lib/membership";
 import { getBalance } from "@/lib/points";
 import { Card, Badge } from "@/components/ui/primitives";
@@ -27,19 +28,23 @@ export default async function ContributorRewardsPage({
   )
     notFound();
 
-  const [campaign, balance, rewards, myRedemptions] = await Promise.all([
-    prisma.campaign.findUnique({ where: { id: campaignId } }),
+  const db = await getDb();
+  const [campaignRows, balance, rewards, myRedemptions] = await Promise.all([
+    db.select().from(campaigns).where(eq(campaigns.id, campaignId)).limit(1),
     getBalance(user.id, campaignId),
-    prisma.reward.findMany({
-      where: { campaignId, active: true },
-      orderBy: { costPoints: "asc" },
-    }),
-    prisma.redemption.findMany({
-      where: { campaignId, userId: user.id },
-      orderBy: { createdAt: "desc" },
-      take: 10,
-    }),
+    db
+      .select()
+      .from(rewardsTable)
+      .where(and(eq(rewardsTable.campaignId, campaignId), eq(rewardsTable.active, true)))
+      .orderBy(asc(rewardsTable.costPoints)),
+    db
+      .select()
+      .from(redemptions)
+      .where(and(eq(redemptions.campaignId, campaignId), eq(redemptions.userId, user.id)))
+      .orderBy(desc(redemptions.createdAt))
+      .limit(10),
   ]);
+  const campaign = campaignRows[0];
   if (!campaign) notFound();
 
   return (

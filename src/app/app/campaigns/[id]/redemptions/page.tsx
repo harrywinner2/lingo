@@ -1,8 +1,9 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ArrowLeft, Download } from "lucide-react";
+import { and, eq, inArray, count } from "drizzle-orm";
 import { requireUser } from "@/lib/session";
-import { prisma } from "@/lib/prisma";
+import { getDb, redemptions as redemptionsTable } from "@/db";
 import { isMember } from "@/lib/membership";
 import { Card, Badge } from "@/components/ui/primitives";
 import { Button } from "@/components/ui/button";
@@ -23,19 +24,24 @@ export default async function RedemptionsPage({
   const user = await requireUser();
   if (!(await isMember(id, user.id, ["owner", "manager"]))) notFound();
 
-  const where =
+  const db = await getDb();
+  const statusFilter =
     view === "open"
-      ? { campaignId: id, status: "open" }
-      : { campaignId: id, status: { in: ["redeemed", "rejected"] } };
+      ? eq(redemptionsTable.status, "open")
+      : inArray(redemptionsTable.status, ["redeemed", "rejected"]);
 
-  const [redemptions, openCount] = await Promise.all([
-    prisma.redemption.findMany({
-      where,
-      include: { user: true },
-      orderBy: { createdAt: "desc" },
+  const [redemptions, openCountRows] = await Promise.all([
+    db.query.redemptions.findMany({
+      where: and(eq(redemptionsTable.campaignId, id), statusFilter),
+      with: { user: true },
+      orderBy: (r: any, o: any) => o.desc(r.createdAt),
     }),
-    prisma.redemption.count({ where: { campaignId: id, status: "open" } }),
+    db
+      .select({ c: count() })
+      .from(redemptionsTable)
+      .where(and(eq(redemptionsTable.campaignId, id), eq(redemptionsTable.status, "open"))),
   ]);
+  const openCount = Number(openCountRows[0].c);
 
   return (
     <div className="space-y-6">

@@ -1,7 +1,15 @@
 import Link from "next/link";
 import { Plus, Mic, CheckCircle2, ArrowRight, Megaphone } from "lucide-react";
+import { and, eq, inArray, desc, count } from "drizzle-orm";
 import { requireUser } from "@/lib/session";
-import { prisma } from "@/lib/prisma";
+import {
+  getDb,
+  campaigns as campaignsTable,
+  memberships as membershipsTable,
+  prompts,
+  recordings,
+  verifications,
+} from "@/db";
 import { getBalance } from "@/lib/points";
 import { Button } from "@/components/ui/button";
 import { Card, Badge } from "@/components/ui/primitives";
@@ -10,22 +18,49 @@ import { formatPoints } from "@/lib/utils";
 
 export default async function Dashboard() {
   const user = await requireUser();
+  const db = await getDb();
 
-  const [owned, memberships, recordingCount, verificationCount, balance] =
-    await Promise.all([
-      prisma.campaign.findMany({
-        where: { ownerId: user.id },
-        orderBy: { createdAt: "desc" },
-        include: { _count: { select: { prompts: true, recordings: true } } },
-      }),
-      prisma.membership.findMany({
-        where: { userId: user.id, role: { in: ["speaker", "verifier", "reviewer"] } },
-        include: { campaign: true },
-      }),
-      prisma.recording.count({ where: { speakerId: user.id } }),
-      prisma.verification.count({ where: { verifierId: user.id } }),
-      getBalance(user.id),
-    ]);
+  const ownedBase = await db
+    .select()
+    .from(campaignsTable)
+    .where(eq(campaignsTable.ownerId, user.id))
+    .orderBy(desc(campaignsTable.createdAt));
+  const ownedIds = ownedBase.map((c: any) => c.id);
+  const pc = new Map<string, number>();
+  const rc = new Map<string, number>();
+  if (ownedIds.length) {
+    for (const r of await db
+      .select({ cid: prompts.campaignId, c: count() })
+      .from(prompts)
+      .where(inArray(prompts.campaignId, ownedIds))
+      .groupBy(prompts.campaignId))
+      pc.set((r as any).cid, Number((r as any).c));
+    for (const r of await db
+      .select({ cid: recordings.campaignId, c: count() })
+      .from(recordings)
+      .where(inArray(recordings.campaignId, ownedIds))
+      .groupBy(recordings.campaignId))
+      rc.set((r as any).cid, Number((r as any).c));
+  }
+  const owned = ownedBase.map((c: any) => ({
+    ...c,
+    _count: { prompts: pc.get(c.id) ?? 0, recordings: rc.get(c.id) ?? 0 },
+  }));
+
+  const [memberships, recCountRows, verCountRows, balance] = await Promise.all([
+    db.query.memberships.findMany({
+      where: and(
+        eq(membershipsTable.userId, user.id),
+        inArray(membershipsTable.role, ["speaker", "verifier", "reviewer"]),
+      ),
+      with: { campaign: true },
+    }),
+    db.select({ c: count() }).from(recordings).where(eq(recordings.speakerId, user.id)),
+    db.select({ c: count() }).from(verifications).where(eq(verifications.verifierId, user.id)),
+    getBalance(user.id),
+  ]);
+  const recordingCount = Number(recCountRows[0].c);
+  const verificationCount = Number(verCountRows[0].c);
 
   const firstName = (user.name || "there").split(" ")[0];
 

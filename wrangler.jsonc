@@ -13,7 +13,7 @@
       "binding": "DB",
       "database_name": "lingo-db",
       "database_id": "REPLACE_WITH_D1_DATABASE_ID",
-      "migrations_dir": "prisma/d1-migrations"
+      "migrations_dir": "drizzle"
     }
   ],
   "r2_buckets": [

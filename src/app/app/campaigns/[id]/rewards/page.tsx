@@ -1,8 +1,9 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ArrowLeft } from "lucide-react";
+import { eq, desc, count, inArray } from "drizzle-orm";
 import { requireUser } from "@/lib/session";
-import { prisma } from "@/lib/prisma";
+import { getDb, rewards as rewardsTable, redemptions } from "@/db";
 import { isMember } from "@/lib/membership";
 import { RewardManager } from "@/components/reward-manager";
 
@@ -15,11 +16,25 @@ export default async function RewardsPage({
   const user = await requireUser();
   if (!(await isMember(id, user.id, ["owner", "manager"]))) notFound();
 
-  const rewards = await prisma.reward.findMany({
-    where: { campaignId: id },
-    orderBy: { createdAt: "desc" },
-    include: { _count: { select: { redemptions: true } } },
-  });
+  const db = await getDb();
+  const rows = await db
+    .select()
+    .from(rewardsTable)
+    .where(eq(rewardsTable.campaignId, id))
+    .orderBy(desc(rewardsTable.createdAt));
+  const ids = rows.map((r: any) => r.id);
+  const redc = new Map<string, number>();
+  if (ids.length)
+    for (const x of await db
+      .select({ rid: redemptions.rewardId, c: count() })
+      .from(redemptions)
+      .where(inArray(redemptions.rewardId, ids))
+      .groupBy(redemptions.rewardId))
+      redc.set((x as any).rid, Number((x as any).c));
+  const rewards = rows.map((r: any) => ({
+    ...r,
+    _count: { redemptions: redc.get(r.id) ?? 0 },
+  }));
 
   return (
     <div className="space-y-6">

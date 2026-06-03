@@ -3,85 +3,117 @@
 import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
+import { headers } from "next/headers";
 import { randomBytes } from "node:crypto";
-import { prisma } from "@/lib/prisma";
+import { and, eq, inArray, count, sql } from "drizzle-orm";
+import {
+  getDb,
+  campaigns,
+  memberships,
+  languages,
+  prompts,
+  invites,
+  magicLinks,
+  recordings,
+  verifications,
+  rewards,
+  redemptions,
+} from "@/db";
 import { requireUser } from "@/lib/session";
 import { awardPoints, getBalance } from "@/lib/points";
 import { slugifyLang } from "@/lib/languages";
-import type { Prisma } from "@/generated/prisma";
-import { headers } from "next/headers";
 import { sendMagicEmail, sendMagicSms } from "@/lib/messaging";
+
+/* eslint-disable @typescript-eslint/no-explicit-any */
 
 // ---------- helpers ----------
 
 async function assertCampaignRole(
+  db: any,
   campaignId: string,
   userId: string,
   roles: string[],
 ) {
-  const campaign = await prisma.campaign.findUnique({
-    where: { id: campaignId },
-  });
-  if (!campaign) throw new Error("Campaign not found");
-  if (campaign.ownerId === userId) return campaign;
-  const membership = await prisma.membership.findFirst({
-    where: {
-      campaignId,
-      userId,
-      role: { in: roles },
-      status: { in: ["active", "probation"] },
-    },
-  });
-  if (!membership) throw new Error("Not authorized for this campaign");
-  return campaign;
+  const c = (
+    await db.select().from(campaigns).where(eq(campaigns.id, campaignId)).limit(1)
+  )[0];
+  if (!c) throw new Error("Campaign not found");
+  if (c.ownerId === userId) return c;
+  const m = await db
+    .select({ id: memberships.id })
+    .from(memberships)
+    .where(
+      and(
+        eq(memberships.campaignId, campaignId),
+        eq(memberships.userId, userId),
+        inArray(memberships.role, roles),
+        inArray(memberships.status, ["active", "probation"]),
+      ),
+    )
+    .limit(1);
+  if (!m[0]) throw new Error("Not authorized for this campaign");
+  return c;
 }
 
 function code(len = 8) {
   return randomBytes(16).toString("base64url").slice(0, len);
 }
 
-// Proof-of-work thresholds for auto-qualifying probation members.
-const QUALIFY_ACCEPTED = 2; // speaker: accepted recordings
-const QUALIFY_VERIFS = 5; // verifier: verdicts on decided clips
-const QUALIFY_AGREEMENT = 0.7; // verifier: agreement with consensus
+const QUALIFY_ACCEPTED = 2;
+const QUALIFY_VERIFS = 5;
+const QUALIFY_AGREEMENT = 0.7;
 
-// Promote a probation member to active once their work proves out. Safe to call
-// often; only acts on probation memberships that meet the bar.
-async function evaluateProbation(
-  db: Prisma.TransactionClient,
-  campaignId: string,
-  userId: string,
-) {
-  const memberships = await db.membership.findMany({
-    where: { campaignId, userId, status: "probation" },
-  });
-  for (const m of memberships) {
+async function evaluateProbation(db: any, campaignId: string, userId: string) {
+  const ms = await db
+    .select()
+    .from(memberships)
+    .where(
+      and(
+        eq(memberships.campaignId, campaignId),
+        eq(memberships.userId, userId),
+        eq(memberships.status, "probation"),
+      ),
+    );
+  for (const m of ms) {
     let qualifies = false;
     if (m.role === "speaker") {
-      const accepted = await db.recording.count({
-        where: { campaignId, speakerId: userId, status: "accepted" },
-      });
-      qualifies = accepted >= QUALIFY_ACCEPTED;
+      const c = (
+        await db
+          .select({ c: count() })
+          .from(recordings)
+          .where(
+            and(
+              eq(recordings.campaignId, campaignId),
+              eq(recordings.speakerId, userId),
+              eq(recordings.status, "accepted"),
+            ),
+          )
+      )[0].c;
+      qualifies = c >= QUALIFY_ACCEPTED;
     } else if (m.role === "verifier") {
-      const vs = await db.verification.findMany({
-        where: {
-          verifierId: userId,
-          recording: { campaignId, status: { in: ["accepted", "rejected"] } },
-        },
-        include: { recording: { select: { status: true } } },
-      });
+      const vs = await db
+        .select({ verdict: verifications.verdict, status: recordings.status })
+        .from(verifications)
+        .innerJoin(recordings, eq(verifications.recordingId, recordings.id))
+        .where(
+          and(
+            eq(verifications.verifierId, userId),
+            eq(recordings.campaignId, campaignId),
+            inArray(recordings.status, ["accepted", "rejected"]),
+          ),
+        );
       if (vs.length >= QUALIFY_VERIFS) {
         const agree = vs.filter(
-          (v) => (v.verdict !== "incorrect") === (v.recording.status === "accepted"),
+          (v: any) => (v.verdict !== "incorrect") === (v.status === "accepted"),
         ).length;
         qualifies = agree / vs.length >= QUALIFY_AGREEMENT;
       }
     }
     if (qualifies)
-      await db.membership.update({
-        where: { id: m.id },
-        data: { status: "active" },
-      });
+      await db
+        .update(memberships)
+        .set({ status: "active" })
+        .where(eq(memberships.id, m.id));
   }
 }
 
@@ -102,14 +134,14 @@ const campaignSchema = z.object({
 export async function createCampaign(input: z.input<typeof campaignSchema>) {
   const user = await requireUser();
   const data = campaignSchema.parse(input);
-  const campaign = await prisma.campaign.create({
-    data: {
-      ...data,
-      ownerId: user.id,
-      memberships: { create: { userId: user.id, role: "owner" } },
-    },
+  const db = await getDb();
+  const c = (await db.insert(campaigns).values({ ...data, ownerId: user.id }).returning())[0];
+  await db.insert(memberships).values({
+    campaignId: c.id,
+    userId: user.id,
+    role: "owner",
   });
-  redirect(`/app/campaigns/${campaign.id}`);
+  redirect(`/app/campaigns/${c.id}`);
 }
 
 // ---------- languages ----------
@@ -119,25 +151,30 @@ const languageSchema = z.object({
   countries: z.array(z.string().max(60)).max(60).default([]),
 });
 
-// Create (or update) a language. A language is just a name + the countries
-// where it's spoken — researchers aren't limited to a fixed list.
 export async function createLanguage(input: z.input<typeof languageSchema>) {
   const user = await requireUser();
   const { name, countries } = languageSchema.parse(input);
-  const code = slugifyLang(name);
-  if (!code) throw new Error("Please enter a valid language name");
-  const lang = await prisma.language.upsert({
-    where: { code },
-    update: { name, countries: countries.join(", ") },
-    create: {
-      code,
+  const code_ = slugifyLang(name);
+  if (!code_) throw new Error("Please enter a valid language name");
+  const db = await getDb();
+  const existing = (
+    await db.select().from(languages).where(eq(languages.code, code_)).limit(1)
+  )[0];
+  if (existing) {
+    await db
+      .update(languages)
+      .set({ name, countries: countries.join(", ") })
+      .where(eq(languages.id, existing.id));
+  } else {
+    await db.insert(languages).values({
+      code: code_,
       name,
       countries: countries.join(", "),
       custom: true,
       createdById: user.id,
-    },
-  });
-  return { code: lang.code, name: lang.name };
+    });
+  }
+  return { code: code_, name };
 }
 
 // ---------- prompts ----------
@@ -155,18 +192,18 @@ export async function importPrompts(
   rows: z.input<typeof promptRow>[],
 ) {
   const user = await requireUser();
-  const campaign = await assertCampaignRole(campaignId, user.id, [
+  const db = await getDb();
+  const campaign = await assertCampaignRole(db, campaignId, user.id, [
     "owner",
     "manager",
   ]);
   const clean = rows
     .map((r) => promptRow.safeParse(r))
     .filter((r) => r.success)
-    .map((r) => r.data);
+    .map((r) => (r as any).data);
   if (clean.length === 0) return { created: 0 };
-
-  await prisma.prompt.createMany({
-    data: clean.map((r) => ({
+  await db.insert(prompts).values(
+    clean.map((r: any) => ({
       campaignId,
       pivotText: r.pivotText,
       pivotLang: campaign.pivotLang,
@@ -178,7 +215,7 @@ export async function importPrompts(
       source: "csv",
       createdById: user.id,
     })),
-  });
+  );
   revalidatePath(`/app/campaigns/${campaignId}/prompts`);
   revalidatePath(`/app/campaigns/${campaignId}`);
   return { created: clean.length };
@@ -186,19 +223,18 @@ export async function importPrompts(
 
 export async function addPrompt(campaignId: string, pivotText: string) {
   const user = await requireUser();
-  const campaign = await assertCampaignRole(campaignId, user.id, [
+  const db = await getDb();
+  const campaign = await assertCampaignRole(db, campaignId, user.id, [
     "owner",
     "manager",
   ]);
-  await prisma.prompt.create({
-    data: {
-      campaignId,
-      pivotText: pivotText.trim(),
-      pivotLang: campaign.pivotLang,
-      targetLang: campaign.targetLang,
-      source: "manual",
-      createdById: user.id,
-    },
+  await db.insert(prompts).values({
+    campaignId,
+    pivotText: pivotText.trim(),
+    pivotLang: campaign.pivotLang,
+    targetLang: campaign.targetLang,
+    source: "manual",
+    createdById: user.id,
   });
   revalidatePath(`/app/campaigns/${campaignId}/prompts`);
 }
@@ -207,34 +243,57 @@ export async function addPrompt(campaignId: string, pivotText: string) {
 
 export async function createInvite(campaignId: string, role: string) {
   const user = await requireUser();
-  await assertCampaignRole(campaignId, user.id, ["owner", "manager"]);
-  const invite = await prisma.invite.create({
-    data: { campaignId, role, code: code(8), createdById: user.id },
-  });
+  const db = await getDb();
+  await assertCampaignRole(db, campaignId, user.id, ["owner", "manager"]);
+  const code_ = code(8);
+  await db
+    .insert(invites)
+    .values({ campaignId, role, code: code_, createdById: user.id });
   revalidatePath(`/app/campaigns/${campaignId}/members`);
-  return invite.code;
+  return code_;
+}
+
+async function upsertMembership(
+  db: any,
+  campaignId: string,
+  userId: string,
+  role: string,
+  status: string,
+) {
+  const existing = (
+    await db
+      .select()
+      .from(memberships)
+      .where(
+        and(
+          eq(memberships.campaignId, campaignId),
+          eq(memberships.userId, userId),
+          eq(memberships.role, role),
+        ),
+      )
+      .limit(1)
+  )[0];
+  if (existing) {
+    if (existing.status !== status && status === "active")
+      await db
+        .update(memberships)
+        .set({ status })
+        .where(eq(memberships.id, existing.id));
+  } else {
+    await db.insert(memberships).values({ campaignId, userId, role, status });
+  }
 }
 
 export async function joinByCode(inviteCode: string) {
   const user = await requireUser();
-  const invite = await prisma.invite.findUnique({
-    where: { code: inviteCode },
-  });
+  const db = await getDb();
+  const invite = (
+    await db.select().from(invites).where(eq(invites.code, inviteCode)).limit(1)
+  )[0];
   if (!invite) throw new Error("Invalid invite code");
   if (invite.expiresAt && invite.expiresAt < new Date())
     throw new Error("Invite expired");
-
-  await prisma.membership.upsert({
-    where: {
-      campaignId_userId_role: {
-        campaignId: invite.campaignId,
-        userId: user.id,
-        role: invite.role,
-      },
-    },
-    update: { status: "active" },
-    create: { campaignId: invite.campaignId, userId: user.id, role: invite.role },
-  });
+  await upsertMembership(db, invite.campaignId, user.id, invite.role, "active");
   redirect(`/app/contribute/${invite.campaignId}`);
 }
 
@@ -248,36 +307,31 @@ export async function importParticipants(
   role: string,
 ) {
   const user = await requireUser();
-  const campaign = await assertCampaignRole(campaignId, user.id, [
+  const db = await getDb();
+  const campaign = await assertCampaignRole(db, campaignId, user.id, [
     "owner",
     "manager",
   ]);
   if (!ROLES.includes(role)) throw new Error("Invalid role");
 
-  // Absolute base URL for links sent over email/SMS.
   const h = await headers();
   const host = h.get("x-forwarded-host") ?? h.get("host");
   const proto = h.get("x-forwarded-proto") ?? "http";
   const base = process.env.APP_URL || (host ? `${proto}://${host}` : "");
-
   const expiresAt = new Date(Date.now() + 90 * 24 * 60 * 60 * 1000);
 
   const prepared = rows
     .map((r) => ({ name: r.name?.trim() || null, contact: (r.contact ?? "").trim() }))
     .filter((r) => r.contact.length >= 3)
-    .map((r) => {
-      const isEmail = r.contact.includes("@");
-      return {
-        ...r,
-        isEmail,
-        token: randomBytes(18).toString("base64url"),
-      };
-    });
-
+    .map((r) => ({
+      ...r,
+      isEmail: r.contact.includes("@"),
+      token: randomBytes(18).toString("base64url"),
+    }));
   if (prepared.length === 0) return [];
 
-  await prisma.magicLink.createMany({
-    data: prepared.map((p) => ({
+  await db.insert(magicLinks).values(
+    prepared.map((p) => ({
       token: p.token,
       campaignId,
       role,
@@ -287,9 +341,8 @@ export async function importParticipants(
       createdById: user.id,
       expiresAt,
     })),
-  });
+  );
 
-  // Send links best-effort, in parallel.
   const results = await Promise.all(
     prepared.map(async (p) => {
       const url = `${base}/m/${p.token}`;
@@ -322,37 +375,34 @@ export async function setCampaignVisibility(
   visibility: "open" | "private",
 ) {
   const user = await requireUser();
-  await assertCampaignRole(campaignId, user.id, ["owner", "manager"]);
-  await prisma.campaign.update({ where: { id: campaignId }, data: { visibility } });
+  const db = await getDb();
+  await assertCampaignRole(db, campaignId, user.id, ["owner", "manager"]);
+  await db.update(campaigns).set({ visibility }).where(eq(campaigns.id, campaignId));
   revalidatePath(`/app/campaigns/${campaignId}`);
 }
 
 export async function setAutoQualify(campaignId: string, autoQualify: boolean) {
   const user = await requireUser();
-  await assertCampaignRole(campaignId, user.id, ["owner", "manager"]);
-  await prisma.campaign.update({ where: { id: campaignId }, data: { autoQualify } });
+  const db = await getDb();
+  await assertCampaignRole(db, campaignId, user.id, ["owner", "manager"]);
+  await db.update(campaigns).set({ autoQualify }).where(eq(campaigns.id, campaignId));
   revalidatePath(`/app/campaigns/${campaignId}/members`);
 }
 
-// A user asks to join an open campaign. Roles map: contributor->speaker,
-// validator->verifier. They join on probation and must prove their work.
 export async function requestToJoin(campaignId: string, roles: string[]) {
   const user = await requireUser();
-  const campaign = await prisma.campaign.findUnique({ where: { id: campaignId } });
+  const db = await getDb();
+  const campaign = (
+    await db.select().from(campaigns).where(eq(campaigns.id, campaignId)).limit(1)
+  )[0];
   if (!campaign || campaign.visibility !== "open")
     throw new Error("This campaign isn't open to join");
   const wanted = roles
     .map((r) => (r === "contributor" ? "speaker" : r === "validator" ? "verifier" : r))
     .filter((r) => r === "speaker" || r === "verifier");
   if (wanted.length === 0) throw new Error("Pick at least one role");
-
-  for (const role of wanted) {
-    await prisma.membership.upsert({
-      where: { campaignId_userId_role: { campaignId, userId: user.id, role } },
-      update: {},
-      create: { campaignId, userId: user.id, role, status: "probation" },
-    });
-  }
+  for (const role of wanted)
+    await upsertMembership(db, campaignId, user.id, role, "probation");
   redirect(`/app/contribute/${campaignId}`);
 }
 
@@ -361,13 +411,16 @@ export async function decideApplicant(
   decision: "approve" | "reject",
 ) {
   const user = await requireUser();
-  const m = await prisma.membership.findUnique({ where: { id: membershipId } });
+  const db = await getDb();
+  const m = (
+    await db.select().from(memberships).where(eq(memberships.id, membershipId)).limit(1)
+  )[0];
   if (!m) throw new Error("Applicant not found");
-  await assertCampaignRole(m.campaignId, user.id, ["owner", "manager"]);
-  await prisma.membership.update({
-    where: { id: membershipId },
-    data: { status: decision === "approve" ? "active" : "rejected" },
-  });
+  await assertCampaignRole(db, m.campaignId, user.id, ["owner", "manager"]);
+  await db
+    .update(memberships)
+    .set({ status: decision === "approve" ? "active" : "rejected" })
+    .where(eq(memberships.id, membershipId));
   revalidatePath(`/app/campaigns/${m.campaignId}/members`);
 }
 
@@ -378,90 +431,95 @@ export async function submitVerification(
   verdict: "correct" | "average" | "incorrect",
 ) {
   const user = await requireUser();
-  const recording = await prisma.recording.findUnique({
-    where: { id: recordingId },
-    include: { campaign: true },
-  });
-  if (!recording) throw new Error("Recording not found");
-  if (recording.speakerId === user.id)
+  const db = await getDb();
+  const rec = (
+    await db.select().from(recordings).where(eq(recordings.id, recordingId)).limit(1)
+  )[0];
+  if (!rec) throw new Error("Recording not found");
+  if (rec.speakerId === user.id)
     throw new Error("You cannot verify your own recording");
-
-  // must be a verifier (or owner/manager) of the campaign
-  await assertCampaignRole(recording.campaignId, user.id, [
+  const campaign = await assertCampaignRole(db, rec.campaignId, user.id, [
     "owner",
     "manager",
     "verifier",
     "reviewer",
   ]);
 
-  await prisma.$transaction(async (tx) => {
-    await tx.verification.upsert({
-      where: {
-        recordingId_verifierId: { recordingId, verifierId: user.id },
-      },
-      update: { verdict },
-      create: { recordingId, verifierId: user.id, verdict },
-    });
+  const existingV = (
+    await db
+      .select()
+      .from(verifications)
+      .where(
+        and(
+          eq(verifications.recordingId, recordingId),
+          eq(verifications.verifierId, user.id),
+        ),
+      )
+      .limit(1)
+  )[0];
+  if (existingV)
+    await db
+      .update(verifications)
+      .set({ verdict })
+      .where(eq(verifications.id, existingV.id));
+  else
+    await db
+      .insert(verifications)
+      .values({ recordingId, verifierId: user.id, verdict });
 
-    // reward the verifier
-    await awardPoints(tx, {
-      userId: user.id,
-      amount: recording.campaign.rewardVerify,
-      reason: "verification",
-      campaignId: recording.campaignId,
-      refId: recordingId,
-    });
-    await tx.campaign.update({
-      where: { id: recording.campaignId },
-      data: { spentPoints: { increment: recording.campaign.rewardVerify } },
-    });
-
-    // decide the recording once enough verdicts are in
-    const verdicts = await tx.verification.findMany({ where: { recordingId } });
-    if (
-      recording.status === "ready" &&
-      verdicts.length >= recording.campaign.minVerifications
-    ) {
-      const score =
-        verdicts.reduce(
-          (s, v) =>
-            s + (v.verdict === "correct" ? 1 : v.verdict === "average" ? 0.5 : 0),
-          0,
-        ) / verdicts.length;
-      const accepted = score >= 0.5;
-      await tx.recording.update({
-        where: { id: recordingId },
-        data: { status: accepted ? "accepted" : "rejected", score },
-      });
-      if (accepted) {
-        // quality-weighted reward to the speaker
-        const reward = Math.round(recording.campaign.rewardRecord * score);
-        await awardPoints(tx, {
-          userId: recording.speakerId,
-          amount: reward,
-          reason: "contribution",
-          campaignId: recording.campaignId,
-          refId: recordingId,
-        });
-        await tx.campaign.update({
-          where: { id: recording.campaignId },
-          data: { spentPoints: { increment: reward } },
-        });
-      }
-
-      // proof-of-work: maybe promote probation members involved in this clip
-      if (recording.campaign.autoQualify) {
-        await evaluateProbation(tx, recording.campaignId, recording.speakerId);
-        for (const v of verdicts)
-          await evaluateProbation(tx, recording.campaignId, v.verifierId);
-      }
-    }
+  await awardPoints(db, {
+    userId: user.id,
+    amount: campaign.rewardVerify,
+    reason: "verification",
+    campaignId: rec.campaignId,
+    refId: recordingId,
   });
+  await db
+    .update(campaigns)
+    .set({ spentPoints: sql`${campaigns.spentPoints} + ${campaign.rewardVerify}` })
+    .where(eq(campaigns.id, rec.campaignId));
 
-  revalidatePath(`/app/contribute/${recording.campaignId}/verify`);
+  const verdicts = await db
+    .select()
+    .from(verifications)
+    .where(eq(verifications.recordingId, recordingId));
+  if (rec.status === "ready" && verdicts.length >= campaign.minVerifications) {
+    const score =
+      verdicts.reduce(
+        (s: number, v: any) =>
+          s + (v.verdict === "correct" ? 1 : v.verdict === "average" ? 0.5 : 0),
+        0,
+      ) / verdicts.length;
+    const accepted = score >= 0.5;
+    await db
+      .update(recordings)
+      .set({ status: accepted ? "accepted" : "rejected", score })
+      .where(eq(recordings.id, recordingId));
+    if (accepted) {
+      const reward = Math.round(campaign.rewardRecord * score);
+      await awardPoints(db, {
+        userId: rec.speakerId,
+        amount: reward,
+        reason: "contribution",
+        campaignId: rec.campaignId,
+        refId: recordingId,
+      });
+      await db
+        .update(campaigns)
+        .set({ spentPoints: sql`${campaigns.spentPoints} + ${reward}` })
+        .where(eq(campaigns.id, rec.campaignId));
+    }
+    if (campaign.autoQualify) {
+      await evaluateProbation(db, rec.campaignId, rec.speakerId);
+      for (const v of verdicts)
+        await evaluateProbation(db, rec.campaignId, v.verifierId);
+    }
+  }
+
+  revalidatePath(`/app/contribute/${rec.campaignId}/verify`);
 }
 
-// ---------- rewards (researcher-defined catalog) ----------
+// ---------- rewards ----------
 
 const rewardSchema = z.object({
   title: z.string().min(1).max(120),
@@ -474,62 +532,77 @@ export async function createReward(
   input: z.input<typeof rewardSchema>,
 ) {
   const user = await requireUser();
-  await assertCampaignRole(campaignId, user.id, ["owner", "manager"]);
+  const db = await getDb();
+  await assertCampaignRole(db, campaignId, user.id, ["owner", "manager"]);
   const data = rewardSchema.parse(input);
-  await prisma.reward.create({ data: { campaignId, ...data } });
+  await db.insert(rewards).values({ campaignId, ...data });
   revalidatePath(`/app/campaigns/${campaignId}/rewards`);
 }
 
 export async function setRewardActive(rewardId: string, active: boolean) {
   const user = await requireUser();
-  const reward = await prisma.reward.findUnique({ where: { id: rewardId } });
+  const db = await getDb();
+  const reward = (
+    await db.select().from(rewards).where(eq(rewards.id, rewardId)).limit(1)
+  )[0];
   if (!reward) throw new Error("Reward not found");
-  await assertCampaignRole(reward.campaignId, user.id, ["owner", "manager"]);
-  await prisma.reward.update({ where: { id: rewardId }, data: { active } });
+  await assertCampaignRole(db, reward.campaignId, user.id, ["owner", "manager"]);
+  await db.update(rewards).set({ active }).where(eq(rewards.id, rewardId));
   revalidatePath(`/app/campaigns/${reward.campaignId}/rewards`);
 }
 
 // ---------- redemptions ----------
 
-// Contributor redeems a reward — points are deducted immediately and a
-// redemption is opened for the researcher to fulfil out-of-band.
 export async function redeemReward(rewardId: string) {
   const user = await requireUser();
-  const reward = await prisma.reward.findUnique({
-    where: { id: rewardId },
-    include: { campaign: true },
-  });
+  const db = await getDb();
+  const reward = (
+    await db.select().from(rewards).where(eq(rewards.id, rewardId)).limit(1)
+  )[0];
   if (!reward || !reward.active) throw new Error("Reward unavailable");
+  const campaign = (
+    await db.select().from(campaigns).where(eq(campaigns.id, reward.campaignId)).limit(1)
+  )[0];
 
   const member =
-    reward.campaign.ownerId === user.id ||
-    (await prisma.membership.findFirst({
-      where: { campaignId: reward.campaignId, userId: user.id, status: "active" },
-    })) !== null;
+    campaign.ownerId === user.id ||
+    (
+      await db
+        .select({ id: memberships.id })
+        .from(memberships)
+        .where(
+          and(
+            eq(memberships.campaignId, reward.campaignId),
+            eq(memberships.userId, user.id),
+          ),
+        )
+        .limit(1)
+    ).length > 0;
   if (!member) throw new Error("You are not part of this campaign");
 
-  await prisma.$transaction(async (tx) => {
-    const balance = await getBalance(user.id, reward.campaignId, tx);
-    if (balance < reward.costPoints)
-      throw new Error("Not enough points for this reward");
+  const balance = await getBalance(user.id, reward.campaignId, db);
+  if (balance < reward.costPoints)
+    throw new Error("Not enough points for this reward");
 
-    const redemption = await tx.redemption.create({
-      data: {
+  const redemption = (
+    await db
+      .insert(redemptions)
+      .values({
         userId: user.id,
         campaignId: reward.campaignId,
         rewardId: reward.id,
         rewardTitle: reward.title,
         points: reward.costPoints,
         status: "open",
-      },
-    });
-    await awardPoints(tx, {
-      userId: user.id,
-      amount: -reward.costPoints,
-      reason: "redemption",
-      campaignId: reward.campaignId,
-      refId: redemption.id,
-    });
+      })
+      .returning()
+  )[0];
+  await awardPoints(db, {
+    userId: user.id,
+    amount: -reward.costPoints,
+    reason: "redemption",
+    campaignId: reward.campaignId,
+    refId: redemption.id,
   });
 
   revalidatePath(`/app/contribute/${reward.campaignId}/rewards`);
@@ -538,36 +611,39 @@ export async function redeemReward(rewardId: string) {
 
 export async function markRedeemed(redemptionId: string) {
   const user = await requireUser();
-  const r = await prisma.redemption.findUnique({ where: { id: redemptionId } });
+  const db = await getDb();
+  const r = (
+    await db.select().from(redemptions).where(eq(redemptions.id, redemptionId)).limit(1)
+  )[0];
   if (!r) throw new Error("Redemption not found");
-  await assertCampaignRole(r.campaignId, user.id, ["owner", "manager"]);
+  await assertCampaignRole(db, r.campaignId, user.id, ["owner", "manager"]);
   if (r.status !== "open") throw new Error("Already handled");
-  await prisma.redemption.update({
-    where: { id: redemptionId },
-    data: { status: "redeemed", handledById: user.id, handledAt: new Date() },
-  });
+  await db
+    .update(redemptions)
+    .set({ status: "redeemed", handledById: user.id, handledAt: new Date() })
+    .where(eq(redemptions.id, redemptionId));
   revalidatePath(`/app/campaigns/${r.campaignId}/redemptions`);
 }
 
-// Reject an open redemption and refund the points to the contributor.
 export async function rejectRedemption(redemptionId: string) {
   const user = await requireUser();
-  const r = await prisma.redemption.findUnique({ where: { id: redemptionId } });
+  const db = await getDb();
+  const r = (
+    await db.select().from(redemptions).where(eq(redemptions.id, redemptionId)).limit(1)
+  )[0];
   if (!r) throw new Error("Redemption not found");
-  await assertCampaignRole(r.campaignId, user.id, ["owner", "manager"]);
+  await assertCampaignRole(db, r.campaignId, user.id, ["owner", "manager"]);
   if (r.status !== "open") throw new Error("Already handled");
-  await prisma.$transaction(async (tx) => {
-    await tx.redemption.update({
-      where: { id: redemptionId },
-      data: { status: "rejected", handledById: user.id, handledAt: new Date() },
-    });
-    await awardPoints(tx, {
-      userId: r.userId,
-      amount: r.points,
-      reason: "adjustment",
-      campaignId: r.campaignId,
-      refId: r.id,
-    });
+  await db
+    .update(redemptions)
+    .set({ status: "rejected", handledById: user.id, handledAt: new Date() })
+    .where(eq(redemptions.id, redemptionId));
+  await awardPoints(db, {
+    userId: r.userId,
+    amount: r.points,
+    reason: "adjustment",
+    campaignId: r.campaignId,
+    refId: r.id,
   });
   revalidatePath(`/app/campaigns/${r.campaignId}/redemptions`);
 }

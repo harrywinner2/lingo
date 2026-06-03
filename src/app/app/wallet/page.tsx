@@ -1,7 +1,13 @@
 import Link from "next/link";
 import { Coins, ArrowDownRight, ArrowUpRight, Gift } from "lucide-react";
+import { eq, desc } from "drizzle-orm";
 import { requireUser } from "@/lib/session";
-import { prisma } from "@/lib/prisma";
+import {
+  getDb,
+  memberships as membershipsTable,
+  pointLedger,
+  redemptions as redemptionsTable,
+} from "@/db";
 import { getBalance } from "@/lib/points";
 import { Card, Badge } from "@/components/ui/primitives";
 import { Button } from "@/components/ui/button";
@@ -19,32 +25,35 @@ const REASON_LABEL: Record<string, string> = {
 export default async function WalletPage() {
   const user = await requireUser();
 
-  const memberships = await prisma.membership.findMany({
-    where: { userId: user.id },
-    include: { campaign: true },
+  const db = await getDb();
+  const memberships = await db.query.memberships.findMany({
+    where: eq(membershipsTable.userId, user.id),
+    with: { campaign: true },
   });
   const campaigns = [
-    ...new Map(memberships.map((m) => [m.campaignId, m.campaign])).values(),
-  ];
+    ...new Map(memberships.map((m: any) => [m.campaignId, m.campaign])).values(),
+  ] as any[];
 
   const [total, perCampaign, ledger, redemptions] = await Promise.all([
     getBalance(user.id),
     Promise.all(
-      campaigns.map(async (c) => ({
+      campaigns.map(async (c: any) => ({
         campaign: c,
         balance: await getBalance(user.id, c.id),
       })),
     ),
-    prisma.pointLedger.findMany({
-      where: { userId: user.id },
-      orderBy: { createdAt: "desc" },
-      take: 50,
-    }),
-    prisma.redemption.findMany({
-      where: { userId: user.id },
-      orderBy: { createdAt: "desc" },
-      take: 10,
-    }),
+    db
+      .select()
+      .from(pointLedger)
+      .where(eq(pointLedger.userId, user.id))
+      .orderBy(desc(pointLedger.createdAt))
+      .limit(50),
+    db
+      .select()
+      .from(redemptionsTable)
+      .where(eq(redemptionsTable.userId, user.id))
+      .orderBy(desc(redemptionsTable.createdAt))
+      .limit(10),
   ]);
 
   const withBalance = perCampaign.filter((c) => c.balance > 0);

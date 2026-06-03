@@ -1,8 +1,9 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ArrowLeft, Mic, CheckCircle2, ArrowRight, Gift } from "lucide-react";
+import { and, eq, inArray } from "drizzle-orm";
 import { requireUser } from "@/lib/session";
-import { prisma } from "@/lib/prisma";
+import { getDb, campaigns, memberships } from "@/db";
 import { Card } from "@/components/ui/primitives";
 import { langName } from "@/lib/languages";
 
@@ -13,18 +14,25 @@ export default async function ContributeHub({
 }) {
   const { campaignId } = await params;
   const user = await requireUser();
+  const db = await getDb();
 
-  const campaign = await prisma.campaign.findUnique({
-    where: { id: campaignId },
-  });
+  const campaign = (
+    await db.select().from(campaigns).where(eq(campaigns.id, campaignId)).limit(1)
+  )[0];
   if (!campaign) notFound();
 
   const roles = (
-    await prisma.membership.findMany({
-      where: { campaignId, userId: user.id, status: "active" },
-      select: { role: true },
-    })
-  ).map((r) => r.role);
+    await db
+      .select({ role: memberships.role })
+      .from(memberships)
+      .where(
+        and(
+          eq(memberships.campaignId, campaignId),
+          eq(memberships.userId, user.id),
+          inArray(memberships.status, ["active", "probation"]),
+        ),
+      )
+  ).map((r: any) => r.role);
   const isOwner = campaign.ownerId === user.id;
   if (roles.length === 0 && !isOwner) notFound();
 

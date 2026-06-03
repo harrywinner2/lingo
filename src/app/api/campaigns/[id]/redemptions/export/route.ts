@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
+import { and, eq, inArray, desc } from "drizzle-orm";
 import { auth } from "@/auth";
-import { prisma } from "@/lib/prisma";
+import { getDb, redemptions, users } from "@/db";
 import { isMember } from "@/lib/membership";
 import { toCsv, csvResponse } from "@/lib/csv";
 
@@ -16,30 +17,36 @@ export async function GET(
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
   const status = new URL(req.url).searchParams.get("status") || "all";
-  const where =
+  const db = await getDb();
+  const statusFilter =
     status === "open"
-      ? { campaignId: id, status: "open" }
+      ? eq(redemptions.status, "open")
       : status === "history"
-        ? { campaignId: id, status: { in: ["redeemed", "rejected"] } }
-        : { campaignId: id };
+        ? inArray(redemptions.status, ["redeemed", "rejected"])
+        : undefined;
 
-  const rows = await prisma.redemption.findMany({
-    where,
-    include: { user: true },
-    orderBy: { createdAt: "desc" },
-  });
+  const rows = await db
+    .select({
+      id: redemptions.id,
+      contributor: users.name,
+      email: users.email,
+      reward: redemptions.rewardTitle,
+      points: redemptions.points,
+      status: redemptions.status,
+      requestedAt: redemptions.createdAt,
+      handledAt: redemptions.handledAt,
+    })
+    .from(redemptions)
+    .innerJoin(users, eq(redemptions.userId, users.id))
+    .where(
+      statusFilter
+        ? and(eq(redemptions.campaignId, id), statusFilter)
+        : eq(redemptions.campaignId, id),
+    )
+    .orderBy(desc(redemptions.createdAt));
 
   const csv = toCsv(
-    rows.map((r) => ({
-      id: r.id,
-      contributor: r.user.name ?? "",
-      email: r.user.email ?? "",
-      reward: r.rewardTitle ?? "",
-      points: r.points,
-      status: r.status,
-      requestedAt: r.createdAt,
-      handledAt: r.handledAt ?? "",
-    })),
+    rows.map((r: any) => ({ ...r, contributor: r.contributor ?? "", email: r.email ?? "", reward: r.reward ?? "", handledAt: r.handledAt ?? "" })),
     [
       { key: "id", header: "Redemption ID" },
       { key: "contributor", header: "Contributor" },
