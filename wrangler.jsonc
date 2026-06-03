@@ -23,9 +23,11 @@
     }
   ],
   "workers_dev": true,
+  "routes": [{ "pattern": "lingo.cm", "custom_domain": true }],
   "vars": {
     "EMAIL_FROM": "Lingo <noreply@lingo.cm>",
-    "AUTH_DEV_LOGIN": "false"
+    "AUTH_DEV_LOGIN": "false",
+    "APP_URL": "https://lingo.cm"
   },
   "observability": {
     "enabled": true
