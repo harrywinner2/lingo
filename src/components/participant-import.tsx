@@ -5,10 +5,10 @@ import Papa from "papaparse";
 import { Upload, UserPlus, Copy, Check, Download } from "lucide-react";
 import { importParticipants } from "@/lib/actions";
 import { Button } from "@/components/ui/button";
-import { Card, Select, Textarea } from "@/components/ui/primitives";
+import { Card, Select, Textarea, Badge } from "@/components/ui/primitives";
 
 type Row = { name?: string | null; contact: string };
-type Made = { name: string; contact: string; token: string };
+type Made = { name: string; contact: string; url: string; sent: string };
 
 export function ParticipantImport({ campaignId }: { campaignId: string }) {
   const [role, setRole] = useState("speaker");
@@ -16,9 +16,6 @@ export function ParticipantImport({ campaignId }: { campaignId: string }) {
   const [made, setMade] = useState<Made[]>([]);
   const [busy, setBusy] = useState(false);
   const [copied, setCopied] = useState<string | null>(null);
-
-  const link = (token: string) =>
-    typeof window !== "undefined" ? `${window.location.origin}/m/${token}` : `/m/${token}`;
 
   function parseCsv(file: File) {
     Papa.parse<Record<string, string>>(file, {
@@ -70,15 +67,20 @@ export function ParticipantImport({ campaignId }: { campaignId: string }) {
 
   function downloadCsv() {
     const csv =
-      "name,contact,link\n" +
+      "name,contact,link,delivery\n" +
       made
-        .map((m) => `"${m.name}","${m.contact}","${link(m.token)}"`)
+        .map((m) => `"${m.name}","${m.contact}","${m.url}","${m.sent}"`)
         .join("\n");
     const a = document.createElement("a");
     a.href = "data:text/csv;charset=utf-8," + encodeURIComponent(csv);
     a.download = "lingo-participant-links.csv";
     a.click();
   }
+
+  const counts = made.reduce(
+    (acc, m) => ({ ...acc, [m.sent]: (acc[m.sent] ?? 0) + 1 }),
+    {} as Record<string, number>,
+  );
 
   return (
     <Card className="p-5">
@@ -138,34 +140,45 @@ export function ParticipantImport({ campaignId }: { campaignId: string }) {
 
       {made.length > 0 && (
         <div className="mt-5">
-          <div className="mb-2 flex items-center justify-between">
+          <div className="mb-2 flex items-center justify-between gap-2">
             <p className="text-sm font-semibold">
-              {made.length} link{made.length === 1 ? "" : "s"} created
+              {made.length} created
+              {counts.email ? ` · ${counts.email} emailed` : ""}
+              {counts.sms ? ` · ${counts.sms} texted` : ""}
+              {counts.failed ? ` · ${counts.failed} failed` : ""}
+              {counts.none ? ` · ${counts.none} link-only` : ""}
             </p>
             <Button size="sm" variant="outline" onClick={downloadCsv}>
               <Download className="h-4 w-4" /> Download CSV
             </Button>
           </div>
+          {(counts.none ?? 0) > 0 && (
+            <p className="mb-2 text-xs text-muted">
+              Link-only means sending isn&apos;t configured (Resend/Twilio) — copy
+              and share these manually.
+            </p>
+          )}
           <div className="max-h-72 space-y-2 overflow-auto">
             {made.map((m) => (
               <div
-                key={m.token}
+                key={m.url}
                 className="flex items-center gap-2 rounded-xl border border-line bg-paper px-3 py-2"
               >
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-sm font-medium">{m.name}</p>
-                  <p className="truncate text-xs text-muted">{link(m.token)}</p>
+                  <p className="truncate text-xs text-muted">{m.contact}</p>
                 </div>
+                <SentBadge sent={m.sent} />
                 <Button
                   size="sm"
                   variant="ghost"
                   onClick={() => {
-                    navigator.clipboard.writeText(link(m.token));
-                    setCopied(m.token);
+                    navigator.clipboard.writeText(m.url);
+                    setCopied(m.url);
                     setTimeout(() => setCopied(null), 1500);
                   }}
                 >
-                  {copied === m.token ? (
+                  {copied === m.url ? (
                     <Check className="h-4 w-4 text-success" />
                   ) : (
                     <Copy className="h-4 w-4" />
@@ -178,4 +191,11 @@ export function ParticipantImport({ campaignId }: { campaignId: string }) {
       )}
     </Card>
   );
+}
+
+function SentBadge({ sent }: { sent: string }) {
+  if (sent === "email") return <Badge tone="success">emailed</Badge>;
+  if (sent === "sms") return <Badge tone="success">texted</Badge>;
+  if (sent === "failed") return <Badge tone="danger">failed</Badge>;
+  return <Badge tone="neutral">link only</Badge>;
 }

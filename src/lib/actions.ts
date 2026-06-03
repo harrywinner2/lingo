@@ -9,6 +9,8 @@ import { requireUser } from "@/lib/session";
 import { awardPoints, getBalance } from "@/lib/points";
 import { slugifyLang } from "@/lib/languages";
 import type { Prisma } from "@/generated/prisma";
+import { headers } from "next/headers";
+import { sendMagicEmail, sendMagicSms } from "@/lib/messaging";
 
 // ---------- helpers ----------
 
@@ -246,32 +248,71 @@ export async function importParticipants(
   role: string,
 ) {
   const user = await requireUser();
-  await assertCampaignRole(campaignId, user.id, ["owner", "manager"]);
+  const campaign = await assertCampaignRole(campaignId, user.id, [
+    "owner",
+    "manager",
+  ]);
   if (!ROLES.includes(role)) throw new Error("Invalid role");
 
+  // Absolute base URL for links sent over email/SMS.
+  const h = await headers();
+  const host = h.get("x-forwarded-host") ?? h.get("host");
+  const proto = h.get("x-forwarded-proto") ?? "http";
+  const base = process.env.APP_URL || (host ? `${proto}://${host}` : "");
+
   const expiresAt = new Date(Date.now() + 90 * 24 * 60 * 60 * 1000);
-  const created: { name: string; contact: string; token: string }[] = [];
-  for (const r of rows) {
-    const contact = (r.contact ?? "").trim();
-    if (contact.length < 3) continue;
-    const isEmail = contact.includes("@");
-    const token = randomBytes(18).toString("base64url");
-    await prisma.magicLink.create({
-      data: {
-        token,
-        campaignId,
-        role,
-        name: r.name?.trim() || null,
-        email: isEmail ? contact.toLowerCase() : null,
-        phone: isEmail ? null : contact,
-        createdById: user.id,
-        expiresAt,
-      },
+
+  const prepared = rows
+    .map((r) => ({ name: r.name?.trim() || null, contact: (r.contact ?? "").trim() }))
+    .filter((r) => r.contact.length >= 3)
+    .map((r) => {
+      const isEmail = r.contact.includes("@");
+      return {
+        ...r,
+        isEmail,
+        token: randomBytes(18).toString("base64url"),
+      };
     });
-    created.push({ name: r.name?.trim() || contact, contact, token });
-  }
+
+  if (prepared.length === 0) return [];
+
+  await prisma.magicLink.createMany({
+    data: prepared.map((p) => ({
+      token: p.token,
+      campaignId,
+      role,
+      name: p.name,
+      email: p.isEmail ? p.contact.toLowerCase() : null,
+      phone: p.isEmail ? null : p.contact,
+      createdById: user.id,
+      expiresAt,
+    })),
+  });
+
+  // Send links best-effort, in parallel.
+  const results = await Promise.all(
+    prepared.map(async (p) => {
+      const url = `${base}/m/${p.token}`;
+      let sent: "email" | "sms" | "failed" | "none" = "none";
+      if (p.isEmail) {
+        sent = (await sendMagicEmail(p.contact, p.name, campaign.title, url))
+          ? "email"
+          : process.env.RESEND_API_KEY
+            ? "failed"
+            : "none";
+      } else {
+        sent = (await sendMagicSms(p.contact, p.name, campaign.title, url))
+          ? "sms"
+          : process.env.TWILIO_ACCOUNT_SID
+            ? "failed"
+            : "none";
+      }
+      return { name: p.name || p.contact, contact: p.contact, url, sent };
+    }),
+  );
+
   revalidatePath(`/app/campaigns/${campaignId}/members`);
-  return created;
+  return results;
 }
 
 // ---------- open campaigns & onboarding ----------
