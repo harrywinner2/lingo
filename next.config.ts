@@ -7,3 +7,6 @@ const nextConfig: NextConfig = {
 };
 
 export default nextConfig;
+
+// `next dev` uses the local SQLite file (seeded). Cloudflare bindings (D1/R2)
+// are provided by wrangler during `cf:preview` / `cf:deploy`.

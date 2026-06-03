@@ -1,21 +1,23 @@
-import { createClient, type RedisClientType } from "redis";
 import { randomUUID } from "node:crypto";
 
 // Talks to the existing lingo.cm translation worker (Python `infer.py`) over the
 // same Redis: push a job onto `job_queue`, await the matching result on the
-// `results` pub/sub channel. A job with no `input` makes the worker reply with
-// the list of available models — we use that as a liveness/health probe.
+// `results` pub/sub channel. `redis` is imported dynamically so Workers builds
+// don't pull a TCP client unless the translator is actually configured/used.
+// (On Cloudflare, point this at an HTTP-reachable Redis like Upstash to enable.)
 
 const JOB_QUEUE = "job_queue";
 const RESULTS = "results";
 
-let pub: RedisClientType | null = null;
+/* eslint-disable @typescript-eslint/no-explicit-any */
+let pub: any = null;
 
-async function getPub(): Promise<RedisClientType> {
+async function getPub(): Promise<any> {
   if (pub?.isOpen) return pub;
   const url = process.env.REDIS_URL;
   if (!url) throw new Error("REDIS_URL not configured");
-  pub = createClient({ url }) as RedisClientType;
+  const { createClient } = await import("redis");
+  pub = createClient({ url });
   pub.on("error", () => {});
   await pub.connect();
   return pub;
@@ -27,7 +29,7 @@ async function runJob(
 ): Promise<{ output?: unknown; error?: string }> {
   const jobId = randomUUID();
   const client = await getPub();
-  const sub = client.duplicate() as RedisClientType;
+  const sub = client.duplicate();
   sub.on("error", () => {});
   await sub.connect();
 
@@ -46,8 +48,6 @@ async function runJob(
         });
       },
     );
-    // subscribe() above is awaited implicitly by node-redis before the callback
-    // can fire; push the job now.
     await client.rPush(JOB_QUEUE, JSON.stringify({ jobId, ...payload }));
     return await result;
   } finally {

@@ -3,8 +3,9 @@
 // Enums are modeled as String (with documented values) to stay SQLite-portable.
 
 generator client {
-  provider = "prisma-client-js"
-  output   = "../src/generated/prisma"
+  provider        = "prisma-client-js"
+  output          = "../src/generated/prisma"
+  previewFeatures = ["driverAdapters", "queryCompiler"]
 }
 
 datasource db {
