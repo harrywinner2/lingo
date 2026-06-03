@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ThumbsUp,
   ThumbsDown,
@@ -30,12 +30,18 @@ export function VerifyTask({ campaignId }: { campaignId: string }) {
   const [busy, setBusy] = useState(false);
   const [done, setDone] = useState(0);
   const [error, setError] = useState<string | null>(null);
+  const skippedRef = useRef<Set<string>>(new Set());
 
   const fetchTask = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(`/api/tasks/verify?campaignId=${campaignId}`);
+      const exclude = [...skippedRef.current].join(",");
+      const res = await fetch(
+        `/api/tasks/verify?campaignId=${campaignId}${
+          exclude ? `&exclude=${encodeURIComponent(exclude)}` : ""
+        }`,
+      );
       const data = await res.json();
       setTask(data.task);
       setRemaining(data.remaining ?? 0);
@@ -151,7 +157,10 @@ export function VerifyTask({ campaignId }: { campaignId: string }) {
       </Card>
 
       <button
-        onClick={fetchTask}
+        onClick={() => {
+          if (task) skippedRef.current.add(task.recordingId);
+          fetchTask();
+        }}
         disabled={busy}
         className="mx-auto flex items-center gap-1.5 text-sm font-semibold text-muted hover:text-ink"
       >

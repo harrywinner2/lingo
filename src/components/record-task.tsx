@@ -44,12 +44,18 @@ export function RecordTask({ campaignId }: { campaignId: string }) {
   const startedAtRef = useRef<number>(0);
   const durationRef = useRef<number>(0);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const skippedRef = useRef<Set<string>>(new Set());
 
   const fetchPrompt = useCallback(async () => {
     setLoadingPrompt(true);
     setError(null);
     try {
-      const res = await fetch(`/api/tasks/record?campaignId=${campaignId}`);
+      const exclude = [...skippedRef.current].join(",");
+      const res = await fetch(
+        `/api/tasks/record?campaignId=${campaignId}${
+          exclude ? `&exclude=${encodeURIComponent(exclude)}` : ""
+        }`,
+      );
       const data = await res.json();
       setPrompt(data.prompt);
       setRemaining(data.remaining ?? 0);
@@ -288,6 +294,7 @@ export function RecordTask({ campaignId }: { campaignId: string }) {
       {phase !== "recording" && phase !== "uploading" && (
         <button
           onClick={() => {
+            if (prompt) skippedRef.current.add(prompt.id);
             reset();
             fetchPrompt();
           }}

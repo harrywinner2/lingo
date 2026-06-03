@@ -17,6 +17,12 @@ const PROMPTS = [
   ["Good morning, did you sleep well?", "greetings", "Morning greeting between neighbours"],
 ];
 
+const REWARDS = [
+  { title: "1,000 XAF mobile money", description: "Sent via MTN/Orange Money", costPoints: 100 },
+  { title: "5,000 XAF mobile money", description: "Sent via MTN/Orange Money", costPoints: 450 },
+  { title: "Bag of rice (5kg)", description: "Collected at the community centre", costPoints: 300 },
+];
+
 async function main() {
   const researcher = await prisma.user.upsert({
     where: { email: "researcher@lingo.dev" },
@@ -39,7 +45,17 @@ async function main() {
     where: { ownerId: researcher.id, title: "Everyday Bafia — greetings & market" },
   });
   if (existing) {
-    console.log("Demo campaign already seeded:", existing.id);
+    const rewardCount = await prisma.reward.count({
+      where: { campaignId: existing.id },
+    });
+    if (rewardCount === 0) {
+      await prisma.reward.createMany({
+        data: REWARDS.map((r) => ({ ...r, campaignId: existing.id })),
+      });
+      console.log("Added demo rewards to existing campaign:", existing.id);
+    } else {
+      console.log("Demo campaign already seeded:", existing.id);
+    }
     return;
   }
 
@@ -74,6 +90,7 @@ async function main() {
           createdById: researcher.id,
         })),
       },
+      rewards: { create: REWARDS },
     },
   });
 

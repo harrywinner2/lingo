@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { ArrowLeft, Mic, CheckCircle2, ArrowRight } from "lucide-react";
+import { ArrowLeft, Mic, CheckCircle2, ArrowRight, Gift } from "lucide-react";
 import { requireUser } from "@/lib/session";
 import { prisma } from "@/lib/prisma";
 import { Card } from "@/components/ui/primitives";
@@ -71,6 +71,13 @@ export default async function ContributeHub({
             desc="Rate whether clips match their prompt"
           />
         )}
+        <TaskCard
+          href={`/app/contribute/${campaignId}/rewards`}
+          icon={Gift}
+          tone="text-primary-600 bg-primary/15"
+          title="Rewards"
+          desc="Redeem your points"
+        />
       </div>
     </div>
   );

@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { ArrowLeft, FileText, Users, Download, Mic } from "lucide-react";
+import { ArrowLeft, FileText, Users, Download, Mic, Gift, Wallet } from "lucide-react";
 import { requireUser } from "@/lib/session";
 import { prisma } from "@/lib/prisma";
 import { Card, Badge } from "@/components/ui/primitives";
@@ -99,7 +99,7 @@ export default async function CampaignOverview({
         </div>
       </Card>
 
-      <div className="grid gap-3 sm:grid-cols-3">
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
         <NavCard
           href={`/app/campaigns/${id}/prompts`}
           icon={FileText}
@@ -111,6 +111,18 @@ export default async function CampaignOverview({
           icon={Users}
           title="People"
           desc="Invite by role"
+        />
+        <NavCard
+          href={`/app/campaigns/${id}/rewards`}
+          icon={Gift}
+          title="Rewards"
+          desc="What points buy"
+        />
+        <NavCard
+          href={`/app/campaigns/${id}/redemptions`}
+          icon={Wallet}
+          title="Redemptions"
+          desc="Fulfil & track"
         />
         <NavCard
           href={`/app/contribute/${id}`}

@@ -1,23 +1,40 @@
-import { Coins, ArrowDownRight, ArrowUpRight } from "lucide-react";
+import Link from "next/link";
+import { Coins, ArrowDownRight, ArrowUpRight, Gift } from "lucide-react";
 import { requireUser } from "@/lib/session";
 import { prisma } from "@/lib/prisma";
 import { getBalance } from "@/lib/points";
 import { Card, Badge } from "@/components/ui/primitives";
-import { RedeemForm } from "@/components/redeem-form";
+import { Button } from "@/components/ui/button";
+import { langName } from "@/lib/languages";
 import { formatPoints, timeAgo } from "@/lib/utils";
 
 const REASON_LABEL: Record<string, string> = {
   contribution: "Recording accepted",
   verification: "Verification",
   quality_bonus: "Quality bonus",
-  redemption: "Redemption",
-  adjustment: "Adjustment",
+  redemption: "Redeemed reward",
+  adjustment: "Refund / adjustment",
 };
 
 export default async function WalletPage() {
   const user = await requireUser();
-  const [balance, ledger, redemptions] = await Promise.all([
+
+  const memberships = await prisma.membership.findMany({
+    where: { userId: user.id },
+    include: { campaign: true },
+  });
+  const campaigns = [
+    ...new Map(memberships.map((m) => [m.campaignId, m.campaign])).values(),
+  ];
+
+  const [total, perCampaign, ledger, redemptions] = await Promise.all([
     getBalance(user.id),
+    Promise.all(
+      campaigns.map(async (c) => ({
+        campaign: c,
+        balance: await getBalance(user.id, c.id),
+      })),
+    ),
     prisma.pointLedger.findMany({
       where: { userId: user.id },
       orderBy: { createdAt: "desc" },
@@ -30,6 +47,8 @@ export default async function WalletPage() {
     }),
   ]);
 
+  const withBalance = perCampaign.filter((c) => c.balance > 0);
+
   return (
     <div className="space-y-6">
       <div>
@@ -37,35 +56,51 @@ export default async function WalletPage() {
           Wallet
         </h1>
         <p className="mt-1 text-muted">
-          Points you&apos;ve earned, and how to redeem them.
+          Points are earned and redeemed within each campaign.
         </p>
       </div>
 
       <Card className="flex items-center justify-between bg-ink p-6 text-paper">
         <div>
-          <p className="text-sm font-medium text-paper/70">Balance</p>
+          <p className="text-sm font-medium text-paper/70">Total points</p>
           <p className="font-display text-4xl font-semibold">
-            {formatPoints(balance)}
+            {formatPoints(total)}
           </p>
         </div>
         <Coins className="h-12 w-12 text-primary" />
       </Card>
 
-      <RedeemForm balance={balance} />
+      {withBalance.length > 0 && (
+        <section>
+          <h2 className="mb-3 text-lg font-semibold">Redeem by campaign</h2>
+          <div className="grid gap-3 sm:grid-cols-2">
+            {withBalance.map(({ campaign, balance }) => (
+              <Card key={campaign.id} className="flex items-center gap-3 p-4">
+                <div className="min-w-0 flex-1">
+                  <p className="truncate font-semibold">{campaign.title}</p>
+                  <p className="text-sm text-muted">
+                    {langName(campaign.targetLang)} · {formatPoints(balance)} pts
+                  </p>
+                </div>
+                <Link href={`/app/contribute/${campaign.id}/rewards`}>
+                  <Button size="sm" variant="outline">
+                    <Gift className="h-4 w-4" /> Redeem
+                  </Button>
+                </Link>
+              </Card>
+            ))}
+          </div>
+        </section>
+      )}
 
       {redemptions.length > 0 && (
         <section>
-          <h2 className="mb-3 text-lg font-semibold">Redemption requests</h2>
+          <h2 className="mb-3 text-lg font-semibold">Your redemptions</h2>
           <div className="space-y-2">
             {redemptions.map((r) => (
-              <Card
-                key={r.id}
-                className="flex items-center justify-between p-4"
-              >
+              <Card key={r.id} className="flex items-center justify-between p-4">
                 <div>
-                  <p className="font-medium capitalize">
-                    {r.method.replace("_", " ")}
-                  </p>
+                  <p className="font-medium">{r.rewardTitle ?? "Reward"}</p>
                   <p className="text-xs text-muted">{timeAgo(r.createdAt)}</p>
                 </div>
                 <div className="flex items-center gap-3">
@@ -74,14 +109,14 @@ export default async function WalletPage() {
                   </span>
                   <Badge
                     tone={
-                      r.status === "paid"
+                      r.status === "redeemed"
                         ? "success"
                         : r.status === "rejected"
                           ? "danger"
                           : "warning"
                     }
                   >
-                    {r.status}
+                    {r.status === "open" ? "pending" : r.status}
                   </Badge>
                 </div>
               </Card>

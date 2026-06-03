@@ -8,15 +8,30 @@ import { Button } from "@/components/ui/button";
 import { Input, Label, Card } from "@/components/ui/primitives";
 
 const devEnabled = process.env.NEXT_PUBLIC_AUTH_DEV_LOGIN !== "false";
+const googleEnabled = process.env.NEXT_PUBLIC_GOOGLE_ENABLED === "true";
+
+const ERRORS: Record<string, string> = {
+  OAuthSignin: "Couldn't start Google sign-in. Check the OAuth configuration.",
+  OAuthCallback: "Google sign-in failed on callback. Check the redirect URI.",
+  OAuthAccountNotLinked:
+    "That email is already registered with a different sign-in method.",
+  Configuration:
+    "Sign-in isn't configured on the server. Set AUTH_SECRET and the Google keys.",
+  AccessDenied: "Access was denied.",
+  Default: "Something went wrong signing in. Please try again.",
+};
 
 export default function SignInPage() {
   const [email, setEmail] = useState("researcher@lingo.dev");
   const [loading, setLoading] = useState<string | null>(null);
 
-  const callbackUrl =
+  const search =
     typeof window !== "undefined"
-      ? new URLSearchParams(window.location.search).get("callbackUrl") || "/app"
-      : "/app";
+      ? new URLSearchParams(window.location.search)
+      : new URLSearchParams();
+  const callbackUrl = search.get("callbackUrl") || "/app";
+  const errorCode = search.get("error");
+  const errorMsg = errorCode ? ERRORS[errorCode] ?? ERRORS.Default : null;
 
   return (
     <div className="bg-grain flex min-h-full flex-col">
@@ -35,27 +50,38 @@ export default function SignInPage() {
             Sign in to record, verify, or run a campaign.
           </p>
 
-          <Button
-            variant="outline"
-            size="lg"
-            className="mt-7 w-full"
-            disabled={loading !== null}
-            onClick={() => {
-              setLoading("google");
-              signIn("google", { callbackUrl });
-            }}
-          >
-            <GoogleMark />
-            {loading === "google" ? "Connecting…" : "Continue with Google"}
-          </Button>
+          {errorMsg && (
+            <p className="mt-5 rounded-lg bg-danger/10 px-3 py-2 text-sm font-medium text-danger">
+              {errorMsg}
+            </p>
+          )}
+
+          {googleEnabled && (
+            <Button
+              variant="outline"
+              size="lg"
+              className="mt-7 w-full"
+              disabled={loading !== null}
+              onClick={() => {
+                setLoading("google");
+                signIn("google", { callbackUrl });
+              }}
+            >
+              <GoogleMark />
+              {loading === "google" ? "Connecting…" : "Continue with Google"}
+            </Button>
+          )}
 
           {devEnabled && (
             <>
-              <div className="my-6 flex items-center gap-3 text-xs font-medium uppercase tracking-wide text-muted">
-                <span className="h-px flex-1 bg-line" />
-                or dev login
-                <span className="h-px flex-1 bg-line" />
-              </div>
+              {googleEnabled && (
+                <div className="my-6 flex items-center gap-3 text-xs font-medium uppercase tracking-wide text-muted">
+                  <span className="h-px flex-1 bg-line" />
+                  or dev login
+                  <span className="h-px flex-1 bg-line" />
+                </div>
+              )}
+              <div className={googleEnabled ? "" : "mt-6"} />
 
               <form
                 onSubmit={(e) => {

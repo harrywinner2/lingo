@@ -8,7 +8,12 @@ export async function GET(req: Request) {
   if (!session?.user?.id)
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const userId = session.user.id;
-  const campaignId = new URL(req.url).searchParams.get("campaignId") || "";
+  const params = new URL(req.url).searchParams;
+  const campaignId = params.get("campaignId") || "";
+  const exclude = (params.get("exclude") || "")
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
 
   if (
     !(await isMember(campaignId, userId, [
@@ -26,6 +31,7 @@ export async function GET(req: Request) {
       status: "ready",
       speakerId: { not: userId },
       verifications: { none: { verifierId: userId } },
+      ...(exclude.length ? { id: { notIn: exclude } } : {}),
     },
     include: { prompt: true },
     orderBy: { createdAt: "asc" },

@@ -94,6 +94,8 @@ model Campaign {
   prompts     Prompt[]
   recordings  Recording[]
   invites     Invite[]
+  rewards     Reward[]
+  redemptions Redemption[]
 
   @@index([ownerId])
 }
@@ -205,17 +207,39 @@ model PointLedger {
   @@index([userId, createdAt])
 }
 
+// A researcher-defined reward: a prize that costs a number of points.
+model Reward {
+  id          String   @id @default(cuid())
+  campaignId  String
+  title       String // "5,000 XAF mobile money", "Bag of rice"
+  description String?
+  costPoints  Int
+  active      Boolean  @default(true)
+  createdAt   DateTime @default(now())
+
+  campaign    Campaign     @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  redemptions Redemption[]
+
+  @@index([campaignId])
+}
+
 model Redemption {
-  id         String   @id @default(cuid())
-  userId     String
-  campaignId String?
-  points     Int
-  method     String // cash | mobile_money | food | other
-  status     String   @default("requested") // requested | approved | paid | rejected
-  note       String?
-  createdAt  DateTime @default(now())
+  id          String    @id @default(cuid())
+  userId      String
+  campaignId  String
+  rewardId    String?
+  rewardTitle String? // snapshot of the reward title at redemption time
+  points      Int
+  status      String    @default("open") // open | redeemed | rejected
+  note        String?
+  handledById String?
+  handledAt   DateTime?
+  createdAt   DateTime  @default(now())
 
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user     User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  campaign Campaign  @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  reward   Reward?   @relation(fields: [rewardId], references: [id])
 
+  @@index([campaignId, status])
   @@index([userId])
 }
