@@ -21,7 +21,7 @@ export async function POST(req: Request) {
     );
 
   try {
-    const output = await translate(text, models, 25000);
+    const output = await translate(text, models, 45000);
     return NextResponse.json({ output });
   } catch (e) {
     const msg = e instanceof Error ? e.message : "Translation failed";

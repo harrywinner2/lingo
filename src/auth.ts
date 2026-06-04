@@ -1,5 +1,7 @@
 import NextAuth from "next-auth";
 import Google from "next-auth/providers/google";
+import MicrosoftEntraID from "next-auth/providers/microsoft-entra-id";
+import Apple from "next-auth/providers/apple";
 import Credentials from "next-auth/providers/credentials";
 import { DrizzleAdapter } from "@auth/drizzle-adapter";
 import { and, eq } from "drizzle-orm";
@@ -27,6 +29,39 @@ export const { handlers, auth, signIn, signOut } = NextAuth(async () => {
       Google({
         clientId: process.env.AUTH_GOOGLE_ID,
         clientSecret: process.env.AUTH_GOOGLE_SECRET,
+        allowDangerousEmailAccountLinking: true,
+      }),
+    );
+  }
+
+  // Microsoft (Entra ID): doubles as SSO + the consent that grants the OneDrive
+  // / Graph token used by the dataset export. Inert until creds are set.
+  if (
+    process.env.AUTH_MICROSOFT_ENTRA_ID_ID &&
+    process.env.AUTH_MICROSOFT_ENTRA_ID_SECRET
+  ) {
+    providers.push(
+      MicrosoftEntraID({
+        clientId: process.env.AUTH_MICROSOFT_ENTRA_ID_ID,
+        clientSecret: process.env.AUTH_MICROSOFT_ENTRA_ID_SECRET,
+        issuer: process.env.AUTH_MICROSOFT_ENTRA_ID_ISSUER,
+        authorization: {
+          params: {
+            scope: "openid profile email offline_access User.Read Files.ReadWrite",
+          },
+        },
+        allowDangerousEmailAccountLinking: true,
+      }),
+    );
+  }
+
+  // Apple Sign In — scaffolded; inert until an Apple Developer account provides
+  // AUTH_APPLE_ID + AUTH_APPLE_SECRET (needed mainly when shipping the iOS app).
+  if (process.env.AUTH_APPLE_ID && process.env.AUTH_APPLE_SECRET) {
+    providers.push(
+      Apple({
+        clientId: process.env.AUTH_APPLE_ID,
+        clientSecret: process.env.AUTH_APPLE_SECRET,
         allowDangerousEmailAccountLinking: true,
       }),
     );
@@ -157,8 +192,14 @@ export const { handlers, auth, signIn, signOut } = NextAuth(async () => {
     pages: { signIn: "/signin" },
     providers,
     callbacks: {
-      async jwt({ token, user }: any) {
+      async jwt({ token, user, account }: any) {
         if (user?.id) token.uid = user.id;
+        // Persist the Microsoft Graph token so the OneDrive export can use it.
+        if (account?.provider === "microsoft-entra-id" && account.access_token) {
+          token.ms_access_token = account.access_token;
+          token.ms_expires_at = account.expires_at;
+          if (account.refresh_token) token.ms_refresh_token = account.refresh_token;
+        }
         if (!token.uid && token.email) {
           const u = (
             await db.select().from(users).where(eq(users.email, token.email)).limit(1)
@@ -169,6 +210,8 @@ export const { handlers, auth, signIn, signOut } = NextAuth(async () => {
       },
       async session({ session, token }: any) {
         if (session.user && token.uid) session.user.id = token.uid as string;
+        if (token.ms_access_token)
+          (session as any).msAccessToken = token.ms_access_token as string;
         return session;
       },
     },

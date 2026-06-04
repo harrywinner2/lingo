@@ -36,6 +36,11 @@ export default async function Home() {
                 {t.nav.translate}
               </Button>
             </Link>
+            <Link href="/blog" className="hidden sm:block">
+              <Button variant="ghost" size="sm">
+                {t.nav.blog}
+              </Button>
+            </Link>
             <Link href="/signin">
               <Button variant="ghost" size="sm">
                 {t.nav.signin}

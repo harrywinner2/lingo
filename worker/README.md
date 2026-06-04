@@ -1,47 +1,45 @@
-# Lingo preprocessing worker
+# Lingo translation worker (v2)
 
-Turns raw uploaded clips into clean, training-ready audio. It is **separate from
-the t2t model worker** (`infer.py`) — the home desktop only serves translation
-models; this runs in the cloud next to R2.
+The model-serving side of [Lingo / NativeAI](https://lingo.cm) — the French-pivot
+machine translation for ~60 Cameroonian languages. This is the `worker/` subtree of
+the monorepo; the web app is the rest of the repo. The worker runs as a standalone
+Python service (laptop + Oracle) and talks to the site over Redis.
 
-## Flow
+## What's here
 
-```
-app /api/recordings ──(rawKey)──> Redis preprocess_queue ──> this worker
-   raw clip in R2  ─download→ ffmpeg (16kHz mono, trim silence, loudnorm)
-                              ├─ quality gate (reject silent/too short/long)
-                              ├─ upload clean FLAC to R2 (clean/…)
-                              └─ POST /api/internal/recordings/processed
-                                    → app: status "ready", metrics, purge raw
-```
+| File | Purpose |
+|---|---|
+| `infer.py` | The worker. Pulls jobs from Redis, serves **int8 CTranslate2** models, heartbeats liveness/device to Redis for the website's status + GPU-takeover routing. |
+| `convert_int8.py` | Convert the fp32 MarianMT models → int8 CTranslate2 (`models_int8/`). |
+| `hf_upload_int8.py` | Upload int8 models to Hugging Face. |
+| `lctl` | Control + visibility CLI for the worker (`lctl on/off/restart/status/watch/logs`). |
+| `runner.py` | Legacy loop wrapper. |
+| `preprocess.py` | Audio preprocessing pipeline (ffmpeg 16k-mono/trim/loudnorm → R2). |
+| `tokenizers/` | The two shared Marian tokenizers (fr-en, en-fr). |
 
-The metadata/CSV stays in the app DB forever; raw audio is purged once a clean
-copy exists; clean clips stay in R2 for voting/training. (OneDrive delivery to
-the researcher is layered on top of this and configured separately.)
+Model weights are **not** in git (tens of GB) — they live on local storage and on
+Hugging Face (`flagship-ai/cameroon-int8` for the int8 serving bundle; the original
+fp32 demo models remain under `flagship-ai/<pair>`).
 
-## Run
+## Running
 
-Requires `ffmpeg` + `ffprobe` on PATH.
+The worker runs as a systemd service (`lingo-worker`). Configuration is via environment
+(never hardcode secrets):
+
+- `REDIS_URL` — Redis connection (job queue + pub/sub + heartbeats). **Required.**
+- `MODELS_DIR` — int8 model store (default `./models_int8`).
+- `TOKENIZERS_DIR` — default `./tokenizers`.
+- `LINGO_DEVICE` — `gpu` to mark this host the priority node, else auto.
+- `OMP_NUM_THREADS` — CT2 intra-op threads (match cores).
 
 ```bash
-cd worker
-python3 -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt
-cp .env.example .env   # fill in REDIS_URL, R2_*, INTERNAL_API_*
-set -a; source .env; set +a
-python preprocess.py
+REDIS_URL=redis://… MODELS_DIR=./models_int8 python3 infer.py
 ```
 
-On the app side, enable the pipeline with:
+## Architecture
 
-```
-PREPROCESS_ENABLED="true"
-INTERNAL_API_SECRET="<same value as the worker>"
-STORAGE_DRIVER="r2"   # + R2_* vars
-```
-
-When `PREPROCESS_ENABLED` is off (the default), uploads are marked ready
-immediately and stored via the local driver — handy for dev.
-
-Scale by running multiple copies; Redis hands each job to one worker.
-```
+A small fleet of workers pulls from one Redis job queue. A CPU node stands down while
+a GPU/priority node is alive (heartbeat keys `lingo:gpu_online` / `lingo:cpu_online`),
+so a fast machine transparently takes over. The website reads those keys to show its
+online/server-type indicator and a slow-response banner on CPU. See the
+[research log](https://lingo.cm/blog) for the int8 migration write-up.

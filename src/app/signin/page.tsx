@@ -9,6 +9,9 @@ import { Input, Label, Card } from "@/components/ui/primitives";
 
 const devEnabled = process.env.NEXT_PUBLIC_AUTH_DEV_LOGIN !== "false";
 const googleEnabled = process.env.NEXT_PUBLIC_GOOGLE_ENABLED === "true";
+const microsoftEnabled = process.env.NEXT_PUBLIC_MICROSOFT_ENABLED === "true";
+const appleEnabled = process.env.NEXT_PUBLIC_APPLE_ENABLED === "true";
+const oauthEnabled = googleEnabled || microsoftEnabled || appleEnabled;
 
 const ERRORS: Record<string, string> = {
   OAuthSignin: "Couldn't start Google sign-in. Check the OAuth configuration.",
@@ -56,32 +59,66 @@ export default function SignInPage() {
             </p>
           )}
 
-          {googleEnabled && (
-            <Button
-              variant="outline"
-              size="lg"
-              className="mt-7 w-full"
-              disabled={loading !== null}
-              onClick={() => {
-                setLoading("google");
-                signIn("google", { callbackUrl });
-              }}
-            >
-              <GoogleMark />
-              {loading === "google" ? "Connecting…" : "Continue with Google"}
-            </Button>
-          )}
+          <div className="mt-7 space-y-2.5">
+            {googleEnabled && (
+              <Button
+                variant="outline"
+                size="lg"
+                className="w-full"
+                disabled={loading !== null}
+                onClick={() => {
+                  setLoading("google");
+                  signIn("google", { callbackUrl });
+                }}
+              >
+                <GoogleMark />
+                {loading === "google" ? "Connecting…" : "Continue with Google"}
+              </Button>
+            )}
+
+            {microsoftEnabled && (
+              <Button
+                variant="outline"
+                size="lg"
+                className="w-full"
+                disabled={loading !== null}
+                onClick={() => {
+                  setLoading("microsoft");
+                  signIn("microsoft-entra-id", { callbackUrl });
+                }}
+              >
+                <MicrosoftMark />
+                {loading === "microsoft" ? "Connecting…" : "Continue with Microsoft"}
+              </Button>
+            )}
+
+            {appleEnabled && (
+              <Button
+                variant="outline"
+                size="lg"
+                className="w-full"
+                disabled={loading !== null}
+                onClick={() => {
+                  setLoading("apple");
+                  signIn("apple", { callbackUrl });
+                }}
+              >
+                <AppleMark />
+                {loading === "apple" ? "Connecting…" : "Continue with Apple"}
+              </Button>
+            )}
+          </div>
 
           {devEnabled && (
             <>
-              {googleEnabled && (
+              {oauthEnabled && (
                 <div className="my-6 flex items-center gap-3 text-xs font-medium uppercase tracking-wide text-muted">
                   <span className="h-px flex-1 bg-line" />
                   or dev login
                   <span className="h-px flex-1 bg-line" />
                 </div>
               )}
-              <div className={googleEnabled ? "" : "mt-6"} />
+              <div className={oauthEnabled ? "" : "mt-6"} />
 
               <form
                 onSubmit={(e) => {
@@ -122,6 +159,25 @@ export default function SignInPage() {
         </Card>
       </main>
     </div>
+  );
+}
+
+function MicrosoftMark() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden>
+      <path fill="#F25022" d="M2 2h9.5v9.5H2z" />
+      <path fill="#7FBA00" d="M12.5 2H22v9.5h-9.5z" />
+      <path fill="#00A4EF" d="M2 12.5h9.5V22H2z" />
+      <path fill="#FFB900" d="M12.5 12.5H22V22h-9.5z" />
+    </svg>
+  );
+}
+
+function AppleMark() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden fill="currentColor">
+      <path d="M16.37 12.78c.03 3.14 2.75 4.18 2.78 4.2-.02.07-.43 1.49-1.43 2.95-.86 1.27-1.76 2.53-3.18 2.56-1.39.03-1.84-.82-3.43-.82s-2.08.8-3.4.85c-1.36.05-2.4-1.37-3.27-2.63C2.27 17.3 1.05 12.6 2.86 9.42c.9-1.58 2.5-2.58 4.24-2.6 1.34-.03 2.6.9 3.43.9.82 0 2.36-1.11 3.97-.95.68.03 2.58.27 3.8 2.06-.1.06-2.27 1.33-2.93 3.95M13.8 4.6c.73-.88 1.22-2.1 1.08-3.32-1.05.04-2.32.7-3.07 1.58-.67.78-1.26 2.02-1.1 3.21 1.17.09 2.36-.6 3.09-1.47" />
+    </svg>
   );
 }
 

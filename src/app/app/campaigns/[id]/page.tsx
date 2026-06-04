@@ -7,6 +7,7 @@ import { getDb, campaigns, prompts, recordings, memberships } from "@/db";
 import { isMember } from "@/lib/membership";
 import { Card, Badge } from "@/components/ui/primitives";
 import { Button } from "@/components/ui/button";
+import { ExportOneDriveButton } from "@/components/export-onedrive-button";
 import { langName } from "@/lib/languages";
 import { formatPoints } from "@/lib/utils";
 
@@ -72,11 +73,14 @@ export default async function CampaignOverview({
             </p>
           )}
         </div>
-        <a href={`/api/campaigns/${id}/export`}>
-          <Button variant="outline">
-            <Download className="h-4 w-4" /> Export dataset
-          </Button>
-        </a>
+        <div className="flex flex-wrap items-start gap-2">
+          <a href={`/api/campaigns/${id}/export`}>
+            <Button variant="outline">
+              <Download className="h-4 w-4" /> Export dataset
+            </Button>
+          </a>
+          <ExportOneDriveButton campaignId={id} />
+        </div>
       </div>
 
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">

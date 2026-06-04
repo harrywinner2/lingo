@@ -8,6 +8,15 @@ import { randomUUID } from "node:crypto";
 
 const JOB_QUEUE = "job_queue";
 const RESULTS = "results";
+const MODELS_KEY = "lingo:models";
+const GPU_KEY = "lingo:gpu_online";
+const CPU_KEY = "lingo:cpu_online";
+
+export type WorkerStatus = {
+  online: boolean;
+  device: "gpu" | "cpu";
+  models: string[];
+};
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
@@ -240,6 +249,97 @@ export async function translate(
 export async function listModels(timeoutMs = 5000): Promise<string[]> {
   const data = await runJob({}, timeoutMs);
   return Array.isArray(data.output) ? (data.output as string[]) : [];
+}
+
+// Cheap status read straight from Redis heartbeat keys (no job round-trip), so
+// the website can poll it frequently for the live banner / online indicator.
+async function readStatusWorkers(timeoutMs: number): Promise<WorkerStatus> {
+  const { connect } = await importSockets();
+  const { hostname, port, username, password } = redisParts();
+  const sock = (connect as any)({ hostname, port });
+  const w = sock.writable.getWriter();
+  const r = sock.readable.getReader();
+  try {
+    const cmds = [
+      ...(password ? respCmd("AUTH", username, password) : []),
+      ...respCmd("GET", MODELS_KEY),
+      ...respCmd("EXISTS", GPU_KEY),
+      ...respCmd("EXISTS", CPU_KEY),
+    ];
+    await w.write(new Uint8Array(cmds));
+    const expected = password ? 4 : 3;
+    const replies: any[] = [];
+    let buf = new Uint8Array(0);
+    const deadline = Date.now() + timeoutMs;
+    while (Date.now() < deadline && replies.length < expected) {
+      const remaining = deadline - Date.now();
+      const read = await Promise.race([
+        r.read(),
+        new Promise<{ timeout: true }>((res) => setTimeout(() => res({ timeout: true }), remaining)),
+      ]);
+      if ((read as any).timeout) break;
+      const { value, done } = read as ReadableStreamReadResult<Uint8Array>;
+      if (done) break;
+      if (value) buf = concat(buf, value);
+      let pos = 0;
+      for (;;) {
+        const rr = parseReply(buf, pos);
+        if (!rr) break;
+        replies.push(rr[0]);
+        pos = rr[1];
+      }
+      if (pos > 0) buf = buf.slice(pos);
+    }
+    const base = password ? 1 : 0;
+    const modelsRaw = replies[base];
+    const gpu = replies[base + 1] === 1;
+    const cpu = replies[base + 2] === 1;
+    let models: string[] = [];
+    try {
+      models = modelsRaw ? JSON.parse(modelsRaw) : [];
+    } catch {
+      /* ignore */
+    }
+    return { online: gpu || cpu, device: gpu ? "gpu" : "cpu", models };
+  } finally {
+    try {
+      await w.close();
+    } catch {
+      /* ignore */
+    }
+    try {
+      sock.close();
+    } catch {
+      /* ignore */
+    }
+  }
+}
+
+async function readStatusNode(): Promise<WorkerStatus> {
+  const client = await getPub();
+  const [modelsRaw, gpu, cpu] = await Promise.all([
+    client.get(MODELS_KEY),
+    client.exists(GPU_KEY),
+    client.exists(CPU_KEY),
+  ]);
+  let models: string[] = [];
+  try {
+    models = modelsRaw ? JSON.parse(modelsRaw) : [];
+  } catch {
+    /* ignore */
+  }
+  return { online: !!(gpu || cpu), device: gpu ? "gpu" : "cpu", models };
+}
+
+export async function readStatus(timeoutMs = 4000): Promise<WorkerStatus> {
+  if (!process.env.REDIS_URL) return { online: false, device: "cpu", models: [] };
+  try {
+    await importSockets();
+    return await readStatusWorkers(timeoutMs);
+  } catch (e) {
+    if (e instanceof Error && e.message === "timeout") throw e;
+    return await readStatusNode();
+  }
 }
 
 // Diagnostic: confirm the Worker can reach Redis (PING) and report job_queue

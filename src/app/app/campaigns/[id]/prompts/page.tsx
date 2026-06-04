@@ -8,6 +8,7 @@ import { isMember } from "@/lib/membership";
 import { Card, Badge } from "@/components/ui/primitives";
 import { CsvImporter } from "@/components/csv-importer";
 import { QuickAddPrompt } from "@/components/quick-add-prompt";
+import { AiPromptGeneratorBlock } from "@/components/ai-prompt-generator-block";
 
 export default async function PromptsPage({
   params,
@@ -59,6 +60,7 @@ export default async function PromptsPage({
 
       <CsvImporter campaignId={id} />
       <QuickAddPrompt campaignId={id} />
+      <AiPromptGeneratorBlock campaignId={id} />
 
       <div>
         <h2 className="mb-3 text-lg font-semibold">

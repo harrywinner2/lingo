@@ -4,6 +4,8 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Home, Megaphone, Mic, Wallet, Compass } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { OfflineQueueIndicator } from "@/components/offline-queue-indicator";
+import { useI18n } from "@/i18n/provider";
 
 const links = [
   { href: "/app", label: "Home", icon: Home, exact: true },
@@ -19,6 +21,7 @@ function isActive(pathname: string, href: string, exact?: boolean) {
 
 export function SidebarNav() {
   const pathname = usePathname();
+  const { d } = useI18n();
   return (
     <nav className="hidden md:flex md:flex-col md:gap-1">
       {links.map((l) => {
@@ -39,6 +42,7 @@ export function SidebarNav() {
           </Link>
         );
       })}
+      <OfflineQueueIndicator labels={d.offlineQueue} />
     </nav>
   );
 }

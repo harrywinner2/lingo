@@ -4,7 +4,7 @@ export const DEFAULT_LOCALE: Locale = "en";
 export const LOCALE_COOKIE = "lingo_locale";
 
 const en = {
-  nav: { translate: "Translate", signin: "Sign in", getStarted: "Get started", models: "Models", openApp: "Open app" },
+  nav: { translate: "Translate", blog: "Research log", signin: "Sign in", getStarted: "Get started", models: "Models", openApp: "Open app" },
   landing: {
     badge: "Preserving spoken-first African languages",
     title1: "Every voice keeps a",
@@ -39,7 +39,7 @@ const en = {
     rootsBadge: "Our roots",
     rootsTitle: "We started with text. You can still use it.",
     rootsBody:
-      "Lingo began as lingo.cm — a cost-efficient, French-pivot machine-translation service for Cameroonian languages, trained on a text corpus we compiled and open-sourced ourselves (including our open cameroon_bibles dataset). Those models are open and live. The voice project is the next chapter — but the foundation is yours to use and download.",
+      "Lingo began as lingo.cm — a cost-efficient, French-pivot machine-translation service for Cameroonian languages. We compiled its corpus by hand from every written source we could find — books, pamphlets, scanned booklets, and our open cameroon_bibles dataset — unified under a single alphabet (AGLC). Those models are open and live. The voice project is the next chapter — but the foundation is yours to use and download.",
     useTranslator: "Use the translator",
     useTranslatorDesc: "Translate text now, while a worker is online.",
     modelsCard: "Models on Hugging Face",
@@ -70,11 +70,19 @@ const en = {
       "The translation server is asleep. Languages and translation light up automatically when it's back online.",
     contributePrompt: "Want better models for your language?",
     contributeCta: "Contribute your voice →",
+    cpuBanner:
+      "Responses may be slow — we're running on CPU to keep the project free while it's archived. Speed returns automatically when a GPU machine comes online.",
+  },
+  offlineQueue: {
+    pending: "{n} waiting to upload",
+    syncing: "Syncing…",
+    offline: "Offline — saved",
+    retry: "Tap to retry",
   },
 };
 
 const fr: typeof en = {
-  nav: { translate: "Traduire", signin: "Connexion", getStarted: "Commencer", models: "Modèles", openApp: "Ouvrir l'app" },
+  nav: { translate: "Traduire", blog: "Journal de recherche", signin: "Connexion", getStarted: "Commencer", models: "Modèles", openApp: "Ouvrir l'app" },
   landing: {
     badge: "Préservons les langues africaines à tradition orale",
     title1: "Chaque voix garde une",
@@ -109,7 +117,7 @@ const fr: typeof en = {
     rootsBadge: "Nos origines",
     rootsTitle: "Nous avons commencé par le texte. Vous pouvez encore l'utiliser.",
     rootsBody:
-      "Lingo a débuté comme lingo.cm — un service de traduction automatique économique, à pivot français, pour les langues camerounaises, entraîné sur un corpus de textes que nous avons nous-mêmes compilé et ouvert (dont notre jeu de données ouvert cameroon_bibles). Ces modèles sont ouverts et en ligne. Le projet vocal est le chapitre suivant — mais la fondation est à vous, à utiliser et télécharger.",
+      "Lingo a débuté comme lingo.cm — un service de traduction automatique économique, à pivot français, pour les langues camerounaises. Nous avons constitué son corpus à la main à partir de toutes les sources écrites disponibles — livres, brochures, livrets numérisés et notre jeu de données ouvert cameroon_bibles — unifiées sous un même alphabet (AGLC). Ces modèles sont ouverts et en ligne. Le projet vocal est le chapitre suivant — mais la fondation est à vous, à utiliser et télécharger.",
     useTranslator: "Utiliser le traducteur",
     useTranslatorDesc: "Traduisez du texte maintenant, si un worker est en ligne.",
     modelsCard: "Modèles sur Hugging Face",
@@ -140,6 +148,14 @@ const fr: typeof en = {
       "Le serveur de traduction est en veille. Les langues et la traduction s'activent automatiquement dès son retour.",
     contributePrompt: "Vous voulez de meilleurs modèles pour votre langue ?",
     contributeCta: "Contribuez votre voix →",
+    cpuBanner:
+      "Les réponses peuvent être lentes — nous tournons sur CPU pour garder le projet gratuit pendant son archivage. La vitesse revient automatiquement dès qu'une machine GPU se connecte.",
+  },
+  offlineQueue: {
+    pending: "{n} en attente d'envoi",
+    syncing: "Synchronisation…",
+    offline: "Hors ligne — enregistré",
+    retry: "Toucher pour réessayer",
   },
 };
 

@@ -1,0 +1,104 @@
+#!/usr/bin/env bash
+# lctl — Lingo translation worker control + visibility (Chromebook / Crostini)
+#
+#   lctl on|start        start the worker (systemd service)
+#   lctl off|stop        stop the worker  (free the machine for other work)
+#   lctl restart         restart the worker
+#   lctl status          one-shot snapshot (device, uptime, jobs, latency, RAM/CPU)
+#   lctl watch           live status, refreshing every 2s (Ctrl-C to quit)
+#   lctl logs            follow the worker log (journalctl -f)
+#   lctl enable|disable  start/don't-start automatically on boot
+#
+# The worker advertises liveness to Redis; when it's off, GPU/other nodes (or the
+# Oracle CPU node) keep serving lingo.cm. When it's on with a GPU it takes over.
+set -euo pipefail
+
+SERVICE="lingo-worker"
+STATS_FILE="/tmp/lingo_worker_stats.json"
+
+c_reset=$'\033[0m'; c_dim=$'\033[2m'; c_bold=$'\033[1m'
+c_green=$'\033[32m'; c_red=$'\033[31m'; c_yellow=$'\033[33m'; c_cyan=$'\033[36m'
+
+active() { systemctl is-active --quiet "$SERVICE"; }
+
+# Read a value from the JSON stats file (python is always present here).
+stat_get() {
+  [ -f "$STATS_FILE" ] || { echo ""; return; }
+  python3 - "$1" <<'PY' 2>/dev/null || echo ""
+import json,sys
+try:
+    with open("/tmp/lingo_worker_stats.json") as f: d=json.load(f)
+    v=d.get(sys.argv[1],"")
+    if isinstance(v,list): print(len(v))
+    else: print(v)
+except Exception: print("")
+PY
+}
+
+fmt_dur() { # seconds -> "1d 2h 3m"
+  local s=${1:-0} d h m
+  d=$((s/86400)); s=$((s%86400)); h=$((s/3600)); s=$((s%3600)); m=$((s/60))
+  local out=""
+  [ "$d" -gt 0 ] && out+="${d}d "
+  [ "$h" -gt 0 ] && out+="${h}h "
+  out+="${m}m"
+  echo "$out"
+}
+
+proc_usage() { # echoes "CPU% RSS_MB" for the service main PID, or "- -"
+  local pid; pid=$(systemctl show -p MainPID --value "$SERVICE" 2>/dev/null || echo 0)
+  if [ "${pid:-0}" -gt 0 ] && [ -d "/proc/$pid" ]; then
+    ps -p "$pid" -o %cpu=,rss= 2>/dev/null | awk '{printf "%.0f %.0f\n", $1, $2/1024}'
+  else
+    echo "- -"
+  fi
+}
+
+print_status() {
+  local running dev host up jobs lat loaded cpu rss
+  if active; then running=1; else running=0; fi
+
+  echo
+  if [ "$running" = 1 ]; then
+    echo "  ${c_bold}Lingo worker${c_reset}  ${c_green}● running${c_reset}"
+  else
+    echo "  ${c_bold}Lingo worker${c_reset}  ${c_red}○ stopped${c_reset}   ${c_dim}(machine free)${c_reset}"
+    echo
+    return
+  fi
+
+  dev=$(stat_get device); host=$(stat_get host)
+  up=$(stat_get uptime_sec); jobs=$(stat_get jobs_done)
+  lat=$(stat_get avg_inference_ms); loaded=$(stat_get loaded_models)
+  read -r cpu rss < <(proc_usage) || true
+
+  local devlabel
+  if [ "$dev" = "gpu" ]; then devlabel="${c_cyan}GPU${c_reset} (takes over from CPU nodes)"
+  else devlabel="${c_yellow}CPU${c_reset}"; fi
+
+  printf "  %-14s %s\n" "device"    "$devlabel"
+  printf "  %-14s %s\n" "host"      "${host:-?}"
+  printf "  %-14s %s\n" "running"   "$(fmt_dur "${up:-0}")"
+  printf "  %-14s %s\n" "jobs done" "${jobs:-0}"
+  printf "  %-14s %s\n" "avg infer" "${lat:-?} ms"
+  printf "  %-14s %s\n" "models"    "${loaded:-0} loaded in RAM"
+  printf "  %-14s %s\n" "cpu / ram" "${cpu:-?}%  /  ${rss:-?} MB"
+  echo
+}
+
+cmd=${1:-status}
+case "$cmd" in
+  on|start)    sudo systemctl start "$SERVICE";   echo "${c_green}started${c_reset} — waiting for first heartbeat…"; sleep 6; print_status ;;
+  off|stop)    sudo systemctl stop "$SERVICE";     echo "${c_red}stopped${c_reset} — machine is yours (RAM freed)" ;;
+  restart)     sudo systemctl restart "$SERVICE";  echo "restarted — waiting for first heartbeat…"; sleep 6; print_status ;;
+  enable)      sudo systemctl enable "$SERVICE";   echo "will start on boot" ;;
+  disable)     sudo systemctl disable "$SERVICE";  echo "won't start on boot" ;;
+  status)      print_status ;;
+  watch)
+    trap 'tput cnorm 2>/dev/null; exit 0' INT
+    tput civis 2>/dev/null || true
+    while true; do clear; echo "  ${c_dim}lctl watch — Ctrl-C to quit${c_reset}"; print_status; sleep 2; done ;;
+  logs)        journalctl -u "$SERVICE" -f -n 50 ;;
+  *)
+    echo "usage: lctl {on|off|restart|status|watch|logs|enable|disable}" >&2; exit 1 ;;
+esac

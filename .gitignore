@@ -56,3 +56,12 @@ next-env.d.ts
 # local drizzle dev db
 /dev.db
 /dev.db-*
+
+# worker model stores (huge, external; live on disk + Hugging Face, never in git)
+/worker/models
+/worker/models_int8
+/worker/models_
+/worker/**/*.safetensors
+/worker/**/*.bin
+/worker/**/__pycache__/
+/worker/*.log

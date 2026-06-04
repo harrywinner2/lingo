@@ -13,6 +13,11 @@ import {
 import { Button } from "@/components/ui/button";
 import { Card, Badge } from "@/components/ui/primitives";
 import { langName } from "@/lib/languages";
+import {
+  isEnabled as offlineEnabled,
+  isOnline,
+  enqueue as enqueueOffline,
+} from "@/lib/offline-queue";
 
 type Prompt = {
   id: string;
@@ -154,9 +159,23 @@ export function RecordTask({ campaignId }: { campaignId: string }) {
     if (!blobRef.current || !prompt) return;
     setPhase("uploading");
     setError(null);
+    const ext = blobRef.current.type.includes("mp4") ? "m4a" : "webm";
+    const meta = {
+      promptId: prompt.id,
+      durationMs: durationRef.current,
+      filename: `clip.${ext}`,
+    };
+    // Offline / flaky-connection path: persist locally and let the background
+    // queue replay it later — never lose a contribution.
+    if (offlineEnabled() && !isOnline()) {
+      await enqueueOffline(blobRef.current, meta);
+      setDone((d) => d + 1);
+      reset();
+      await fetchPrompt();
+      return;
+    }
     try {
       const fd = new FormData();
-      const ext = blobRef.current.type.includes("mp4") ? "m4a" : "webm";
       fd.append("audio", blobRef.current, `clip.${ext}`);
       fd.append("promptId", prompt.id);
       fd.append("durationMs", String(durationRef.current));
@@ -166,6 +185,14 @@ export function RecordTask({ campaignId }: { campaignId: string }) {
       reset();
       await fetchPrompt();
     } catch (e) {
+      // Queue on failure instead of losing the recording (when enabled).
+      if (offlineEnabled() && blobRef.current) {
+        await enqueueOffline(blobRef.current, meta);
+        setDone((d) => d + 1);
+        reset();
+        await fetchPrompt();
+        return;
+      }
       setError(e instanceof Error ? e.message : "Upload failed");
       setPhase("recorded");
     }

@@ -12,6 +12,7 @@ import {
   MessageSquare,
   Star,
   Languages,
+  Gauge,
 } from "lucide-react";
 import { Logo } from "@/components/logo";
 import { Button } from "@/components/ui/button";
@@ -33,6 +34,7 @@ export default function TranslatePage() {
   const { d } = useI18n();
   const tr = d.translate;
   const [status, setStatus] = useState<Status>("loading");
+  const [device, setDevice] = useState<"gpu" | "cpu">("cpu");
   const [checking, setChecking] = useState(false);
   const [langs, setLangs] = useState<string[]>([]);
   const [pairs, setPairs] = useState<Set<string>>(new Set());
@@ -53,6 +55,7 @@ export default function TranslatePage() {
     try {
       const res = await fetch("/api/translate/status", { cache: "no-store" });
       const data = await res.json();
+      if (data.device === "gpu" || data.device === "cpu") setDevice(data.device);
       if (data.online && data.models?.length) {
         const parsed = parseModels(data.models);
         setPairs(parsed.pairs);
@@ -72,6 +75,10 @@ export default function TranslatePage() {
 
   useEffect(() => {
     checkStatus();
+    // Poll so the fleet's liveness + device (CPU↔GPU takeover) reflects live in
+    // open tabs without a refresh — the CPU-slow banner appears/clears on its own.
+    const id = setInterval(checkStatus, 20000);
+    return () => clearInterval(id);
   }, [checkStatus]);
 
   const chain = buildChain(pairs, source, target);
@@ -142,7 +149,7 @@ export default function TranslatePage() {
           </Link>
           <div className="flex items-center gap-2.5">
             <LocaleSwitcher />
-            <StatusPill status={status} checking={checking} onRetry={checkStatus} />
+            <StatusPill status={status} device={device} checking={checking} onRetry={checkStatus} />
             <a href="https://huggingface.co/flagship-ai" target="_blank" rel="noreferrer" className="hidden sm:block">
               <Button size="sm" variant="outline">
                 {d.nav.models}
@@ -168,6 +175,13 @@ export default function TranslatePage() {
           <Card className="mb-5 flex items-center gap-3 border-warning/30 bg-warning/5 p-4">
             <WifiOff className="h-5 w-5 text-warning" />
             <p className="text-sm">{tr.asleepNotice}</p>
+          </Card>
+        )}
+
+        {online && device === "cpu" && (
+          <Card className="mb-5 flex items-center gap-3 border-amber-400/40 bg-amber-50 p-4">
+            <Gauge className="h-5 w-5 shrink-0 text-amber-600" />
+            <p className="text-sm text-amber-900">{tr.cpuBanner}</p>
           </Card>
         )}
 
@@ -259,7 +273,7 @@ export default function TranslatePage() {
   );
 }
 
-function StatusPill({ status, checking, onRetry }: { status: Status; checking: boolean; onRetry: () => void }) {
+function StatusPill({ status, device, checking, onRetry }: { status: Status; device: "gpu" | "cpu"; checking: boolean; onRetry: () => void }) {
   const { d } = useI18n();
   if (status === "loading" || checking)
     return (
@@ -268,9 +282,15 @@ function StatusPill({ status, checking, onRetry }: { status: Status; checking: b
       </span>
     );
   if (status === "online")
-    return (
+    // Surface server-type: a GPU/priority node is green (fast); a CPU fallback
+    // node is amber (slow), matching the slow-response banner below.
+    return device === "cpu" ? (
+      <span className="inline-flex items-center gap-1.5 rounded-full border border-amber-400/40 bg-amber-50 px-3 py-1.5 text-xs font-semibold text-amber-700">
+        <Wifi className="h-3.5 w-3.5" /> {d.translate.online} · CPU
+      </span>
+    ) : (
       <span className="inline-flex items-center gap-1.5 rounded-full border border-success/30 bg-success/10 px-3 py-1.5 text-xs font-semibold text-success">
-        <Wifi className="h-3.5 w-3.5" /> {d.translate.online}
+        <Wifi className="h-3.5 w-3.5" /> {d.translate.online} · GPU
       </span>
     );
   return (
