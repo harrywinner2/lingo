@@ -15,6 +15,19 @@ export const TARGET_LANGUAGES = [
   { code: "ghomala", name: "Ghomala" },
 ] as const;
 
+// Cameroonian languages currently in the compiled corpus / served by the
+// translator (French-pivot MarianMT models). Grows over time.
+export const CORPUS_LANGUAGES = [
+  "Aghem", "Ajamiya", "Akoose", "Awing", "Babanki", "Bafia", "Bakoko",
+  "Bakweri", "Bidwee", "Bum", "Cuvok", "Denya", "Dii", "Doyayo", "Ejagham",
+  "Esimbi", "Ewondo", "Gbaya", "Guidar", "Guiziga", "Isu", "Kapsiki",
+  "Kenyang", "Koonzime", "Lamnso", "Limbum", "Mankon", "Massana", "Mbembe",
+  "Medumba", "Meta", "Mmen", "Mofa", "Mofu", "Moghamo", "Mpumpong", "Mundani",
+  "Ngi", "Ngienboum", "Ngomba", "Ngombale", "Ngwo", "Nomaande", "Nugunu",
+  "Oku", "Pana", "Peere", "Punu", "Samba", "Tunen", "Tupuri", "Vute", "Weh",
+  "Yambeta", "Yemba",
+] as const;
+
 export const PIVOT_LANGUAGES = [
   { code: "en", name: "English" },
   { code: "fr", name: "French" },

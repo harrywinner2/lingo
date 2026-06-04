@@ -1,5 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { Plus_Jakarta_Sans, Fraunhofer_or_fallback } from "./fonts";
+import { getLocale } from "@/i18n/server";
+import { LocaleProvider } from "@/i18n/provider";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -18,15 +20,18 @@ export const viewport: Viewport = {
   userScalable: false,
 };
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
+  const locale = await getLocale();
   return (
     <html
-      lang="en"
+      lang={locale}
       className={`${Plus_Jakarta_Sans.variable} ${Fraunhofer_or_fallback.variable} h-full`}
     >
-      <body className="min-h-full flex flex-col">{children}</body>
+      <body className="min-h-full flex flex-col">
+        <LocaleProvider locale={locale}>{children}</LocaleProvider>
+      </body>
     </html>
   );
 }

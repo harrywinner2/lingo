@@ -16,6 +16,8 @@ import {
 import { Logo } from "@/components/logo";
 import { Button } from "@/components/ui/button";
 import { Card, Select, Textarea } from "@/components/ui/primitives";
+import { LocaleSwitcher } from "@/components/locale-switcher";
+import { useI18n } from "@/i18n/provider";
 import {
   parseModels,
   buildChain,
@@ -28,6 +30,8 @@ import {
 type Status = "loading" | "online" | "offline";
 
 export default function TranslatePage() {
+  const { d } = useI18n();
+  const tr = d.translate;
   const [status, setStatus] = useState<Status>("loading");
   const [checking, setChecking] = useState(false);
   const [langs, setLangs] = useState<string[]>([]);
@@ -41,6 +45,8 @@ export default function TranslatePage() {
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const taRef = useRef<HTMLTextAreaElement>(null);
+  // Cache last successful request so identical re-clicks don't hit the backend.
+  const lastReq = useRef<{ key: string; output: string; comment: string } | null>(null);
 
   const checkStatus = useCallback(async () => {
     setChecking(true);
@@ -48,12 +54,12 @@ export default function TranslatePage() {
       const res = await fetch("/api/translate/status", { cache: "no-store" });
       const data = await res.json();
       if (data.online && data.models?.length) {
-        const { pairs, langs } = parseModels(data.models);
-        setPairs(pairs);
-        setLangs(langs);
+        const parsed = parseModels(data.models);
+        setPairs(parsed.pairs);
+        setLangs(parsed.langs);
         setStatus("online");
-        setSource((s) => s || (langs.includes("francais") ? "francais" : langs[0]));
-        setTarget((t) => t || langs.find((l) => l !== "francais") || langs[1] || "");
+        setSource((s) => s || (parsed.langs.includes("francais") ? "francais" : parsed.langs[0]));
+        setTarget((t) => t || parsed.langs.find((l) => l !== "francais") || parsed.langs[1] || "");
       } else {
         setStatus("offline");
       }
@@ -92,6 +98,14 @@ export default function TranslatePage() {
 
   async function doTranslate() {
     if (!chain || !text.trim()) return;
+    const key = `${source}|${target}|${text.trim()}`;
+    // Identical to the last successful translation — reuse, don't re-request.
+    if (lastReq.current && lastReq.current.key === key) {
+      setOutput(lastReq.current.output);
+      setComment(lastReq.current.comment);
+      setError(null);
+      return;
+    }
     setBusy(true);
     setError(null);
     setOutput("");
@@ -104,15 +118,13 @@ export default function TranslatePage() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Translation failed");
+      const c = commentUrl(chain, text, data.output);
       setOutput(data.output);
-      setComment(commentUrl(chain, text, data.output));
+      setComment(c);
+      lastReq.current = { key, output: data.output, comment: c };
     } catch (e) {
       setError(
-        e instanceof Error && e.message.includes("respond")
-          ? "The translation server didn't respond — it may be asleep. Try again shortly."
-          : e instanceof Error
-            ? e.message
-            : "Translation failed",
+        e instanceof Error && e.message.includes("respond") ? tr.asleepNotice : tr.translate + " ✗",
       );
     } finally {
       setBusy(false);
@@ -129,10 +141,11 @@ export default function TranslatePage() {
             <Logo />
           </Link>
           <div className="flex items-center gap-2.5">
+            <LocaleSwitcher />
             <StatusPill status={status} checking={checking} onRetry={checkStatus} />
-            <a href="https://huggingface.co/flagship-ai" target="_blank" rel="noreferrer">
+            <a href="https://huggingface.co/flagship-ai" target="_blank" rel="noreferrer" className="hidden sm:block">
               <Button size="sm" variant="outline">
-                Models
+                {d.nav.models}
               </Button>
             </a>
           </div>
@@ -141,100 +154,54 @@ export default function TranslatePage() {
 
       <main className="mx-auto w-full max-w-2xl flex-1 px-5 py-10">
         <div className="mb-6 text-center">
-          <h1 className="font-display text-4xl font-semibold tracking-tight">
-            Translate Cameroonian languages
-          </h1>
-          <p className="mx-auto mt-3 max-w-md text-muted">
-            Our original French-pivot models — the text foundation the voice
-            project grew from.
-          </p>
+          <h1 className="font-display text-4xl font-semibold tracking-tight">{tr.title}</h1>
+          <p className="mx-auto mt-3 max-w-md text-muted">{tr.subtitle}</p>
         </div>
 
         <a href={EARN_FORM_URL} target="_blank" rel="noreferrer" className="block">
           <div className="mb-5 flex items-center justify-center gap-2 rounded-xl bg-accent px-4 py-2.5 text-sm font-semibold text-white shadow-soft transition hover:bg-accent-600">
-            <Star className="h-4 w-4" /> Aidez-nous à traduire votre langue, et
-            gagnez de l&apos;argent !
+            <Star className="h-4 w-4" /> {tr.earnBanner}
           </div>
         </a>
 
         {status === "offline" && (
           <Card className="mb-5 flex items-center gap-3 border-warning/30 bg-warning/5 p-4">
             <WifiOff className="h-5 w-5 text-warning" />
-            <p className="text-sm">
-              The translation server is asleep. Languages and translation light up
-              automatically when it&apos;s back online.
-            </p>
+            <p className="text-sm">{tr.asleepNotice}</p>
           </Card>
         )}
 
         <Card className={`overflow-hidden ${online ? "" : "opacity-60"}`}>
           <div className="flex items-center gap-2 border-b border-line bg-paper/60 p-3">
-            <Select
-              value={source}
-              onChange={(e) => setSource(e.target.value)}
-              disabled={!online}
-              className="h-10 border-0 bg-transparent font-semibold focus:ring-0"
-            >
+            <Select value={source} onChange={(e) => setSource(e.target.value)} disabled={!online} className="h-10 border-0 bg-transparent font-semibold focus:ring-0">
               {langs.length === 0 && <option>—</option>}
               {langs.map((l) => (
-                <option key={l} value={l}>
-                  {tName(l)}
-                </option>
+                <option key={l} value={l}>{tName(l)}</option>
               ))}
             </Select>
-            <button
-              onClick={swap}
-              disabled={!online}
-              aria-label="Swap"
-              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-muted transition hover:bg-black/5 hover:text-ink disabled:opacity-40"
-            >
+            <button onClick={swap} disabled={!online} aria-label="Swap" className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-muted transition hover:bg-black/5 hover:text-ink disabled:opacity-40">
               <ArrowRightLeft className="h-4 w-4" />
             </button>
-            <Select
-              value={target}
-              onChange={(e) => setTarget(e.target.value)}
-              disabled={!online}
-              className="h-10 border-0 bg-transparent font-semibold focus:ring-0"
-            >
+            <Select value={target} onChange={(e) => setTarget(e.target.value)} disabled={!online} className="h-10 border-0 bg-transparent font-semibold focus:ring-0">
               {langs.length === 0 && <option>—</option>}
               {langs.map((l) => (
-                <option key={l} value={l}>
-                  {tName(l)}
-                </option>
+                <option key={l} value={l}>{tName(l)}</option>
               ))}
             </Select>
           </div>
 
           {source && target && !chain && online && (
-            <p className="border-b border-line bg-warning/10 px-4 py-2 text-sm text-warning">
-              No model path between {tName(source)} and {tName(target)}.
-            </p>
+            <p className="border-b border-line bg-warning/10 px-4 py-2 text-sm text-warning">{tr.noPath}</p>
           )}
 
           <div className="p-4">
-            <Textarea
-              ref={taRef}
-              rows={3}
-              value={text}
-              onChange={(e) => setText(e.target.value)}
-              placeholder="Texte à traduire…"
-              disabled={!online}
-              className="border-0 px-0 text-lg focus:ring-0"
-            />
+            <Textarea ref={taRef} rows={3} value={text} onChange={(e) => setText(e.target.value)} placeholder={tr.placeholder} disabled={!online} className="border-0 px-0 text-lg focus:ring-0" />
             <div className="mt-3 flex flex-wrap items-center gap-1.5">
-              <span className="mr-1 text-xs font-semibold text-muted">
-                Caractères spéciaux (AGLC)
-              </span>
+              <span className="mr-1 text-xs font-semibold text-muted">{tr.specialChars}</span>
               {AGLC_CHARS.map((c, i) => {
                 const combining = ["́", "̀", "̌"].includes(c);
                 return (
-                  <button
-                    key={i}
-                    type="button"
-                    onClick={() => insertChar(c)}
-                    disabled={!online}
-                    className="h-8 min-w-8 rounded-lg border border-line bg-card px-2 text-sm font-medium transition hover:border-primary/60 hover:bg-paper disabled:opacity-40"
-                  >
+                  <button key={i} type="button" onClick={() => insertChar(c)} disabled={!online} className="h-8 min-w-8 rounded-lg border border-line bg-card px-2 text-sm font-medium transition hover:border-primary/60 hover:bg-paper disabled:opacity-40">
                     {combining ? "◌" + c : c}
                   </button>
                 );
@@ -246,20 +213,14 @@ export default function TranslatePage() {
             <div className="border-t border-line bg-paper/40 p-4">
               {busy && (
                 <p className="inline-flex items-center gap-2 text-sm text-muted">
-                  <Loader2 className="h-4 w-4 animate-spin" /> Traduction…
+                  <Loader2 className="h-4 w-4 animate-spin" /> {tr.translating}
                 </p>
               )}
-              {error && (
-                <p className="rounded-lg bg-danger/10 px-3 py-2 text-sm font-medium text-danger">
-                  {error}
-                </p>
-              )}
+              {error && <p className="rounded-lg bg-danger/10 px-3 py-2 text-sm font-medium text-danger">{error}</p>}
               {output && !busy && (
                 <div>
                   <div className="mb-1 flex items-center justify-between">
-                    <span className="text-xs font-semibold text-accent-600">
-                      {tName(target)}
-                    </span>
+                    <span className="text-xs font-semibold text-accent-600">{tName(target)}</span>
                     <button
                       onClick={() => {
                         navigator.clipboard.writeText(output);
@@ -268,27 +229,13 @@ export default function TranslatePage() {
                       }}
                       className="inline-flex items-center gap-1 text-xs font-semibold text-muted hover:text-ink"
                     >
-                      {copied ? (
-                        <>
-                          <Check className="h-3.5 w-3.5 text-success" /> Copié
-                        </>
-                      ) : (
-                        <>
-                          <Copy className="h-3.5 w-3.5" /> Copier
-                        </>
-                      )}
+                      {copied ? (<><Check className="h-3.5 w-3.5 text-success" /> {tr.copied}</>) : (<><Copy className="h-3.5 w-3.5" /> {tr.copy}</>)}
                     </button>
                   </div>
                   <p className="text-lg">{output}</p>
                   {comment && (
-                    <a
-                      href={comment}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="mt-2 inline-flex items-center gap-1.5 text-xs font-semibold text-muted hover:text-ink"
-                    >
-                      <MessageSquare className="h-3.5 w-3.5" /> Laisser un
-                      commentaire sur cette traduction
+                    <a href={comment} target="_blank" rel="noreferrer" className="mt-2 inline-flex items-center gap-1.5 text-xs font-semibold text-muted hover:text-ink">
+                      <MessageSquare className="h-3.5 w-3.5" /> {tr.comment}
                     </a>
                   )}
                 </div>
@@ -297,63 +244,38 @@ export default function TranslatePage() {
           )}
 
           <div className="p-4 pt-0">
-            <Button
-              className="w-full"
-              size="lg"
-              onClick={doTranslate}
-              disabled={!online || !chain || !text.trim() || busy}
-            >
-              {busy ? (
-                <>
-                  <Loader2 className="h-5 w-5 animate-spin" /> Traduction…
-                </>
-              ) : (
-                <>
-                  <Languages className="h-5 w-5" /> Traduire
-                </>
-              )}
+            <Button className="w-full" size="lg" onClick={doTranslate} disabled={!online || !chain || !text.trim() || busy}>
+              {busy ? (<><Loader2 className="h-5 w-5 animate-spin" /> {tr.translating}</>) : (<><Languages className="h-5 w-5" /> {tr.translate}</>)}
             </Button>
           </div>
         </Card>
 
         <p className="mt-10 text-center text-sm text-muted">
-          Want better models for your language?{" "}
-          <Link href="/app" className="font-semibold text-accent-600">
-            Contribute your voice →
-          </Link>
+          {tr.contributePrompt}{" "}
+          <Link href="/app" className="font-semibold text-accent-600">{tr.contributeCta}</Link>
         </p>
       </main>
     </div>
   );
 }
 
-function StatusPill({
-  status,
-  checking,
-  onRetry,
-}: {
-  status: Status;
-  checking: boolean;
-  onRetry: () => void;
-}) {
+function StatusPill({ status, checking, onRetry }: { status: Status; checking: boolean; onRetry: () => void }) {
+  const { d } = useI18n();
   if (status === "loading" || checking)
     return (
       <span className="inline-flex items-center gap-1.5 rounded-full border border-line bg-card px-3 py-1.5 text-xs font-semibold text-muted">
-        <Loader2 className="h-3.5 w-3.5 animate-spin" /> Checking…
+        <Loader2 className="h-3.5 w-3.5 animate-spin" /> {d.translate.checking}
       </span>
     );
   if (status === "online")
     return (
       <span className="inline-flex items-center gap-1.5 rounded-full border border-success/30 bg-success/10 px-3 py-1.5 text-xs font-semibold text-success">
-        <Wifi className="h-3.5 w-3.5" /> Server online
+        <Wifi className="h-3.5 w-3.5" /> {d.translate.online}
       </span>
     );
   return (
-    <button
-      onClick={onRetry}
-      className="inline-flex items-center gap-1.5 rounded-full border border-warning/30 bg-warning/10 px-3 py-1.5 text-xs font-semibold text-warning transition hover:bg-warning/15"
-    >
-      <WifiOff className="h-3.5 w-3.5" /> Server asleep · retry
+    <button onClick={onRetry} className="inline-flex items-center gap-1.5 rounded-full border border-warning/30 bg-warning/10 px-3 py-1.5 text-xs font-semibold text-warning transition hover:bg-warning/15">
+      <WifiOff className="h-3.5 w-3.5" /> {d.translate.asleep}
     </button>
   );
 }
