@@ -1,9 +1,9 @@
 // Server-only helper. Do not import from client components.
 // (Not using the "server-only" package to avoid adding a dependency;
-// this module reads process.env.ANTHROPIC_API_KEY and must run on the server.)
+// this module reads process.env.OPENAI_API_KEY and must run on the server.)
 
-const ANTHROPIC_API_URL = "https://api.anthropic.com/v1/messages";
-const MODEL = "claude-opus-4-8";
+const OPENAI_API_URL = "https://api.openai.com/v1/chat/completions";
+const MODEL = process.env.OPENAI_MODEL || "gpt-4o";
 
 export type GeneratePromptsInput = {
   /** Target language name speakers will record in, e.g. "Lingala", "Wolof". */
@@ -20,24 +20,24 @@ export type GeneratePromptsInput = {
 
 export class AiNotConfiguredError extends Error {
   constructor() {
-    super("AI authoring not configured: ANTHROPIC_API_KEY is not set.");
+    super("AI authoring not configured: OPENAI_API_KEY is not set.");
     this.name = "AiNotConfiguredError";
   }
 }
 
 export function isAiConfigured(): boolean {
-  return Boolean(process.env.ANTHROPIC_API_KEY);
+  return Boolean(process.env.OPENAI_API_KEY);
 }
 
 /**
- * Generate culturally-adapted data-collection prompts with Claude.
+ * Generate culturally-adapted data-collection prompts with OpenAI.
  * Prompts are returned in French (the project pivot language), short and concrete.
- * Throws AiNotConfiguredError when ANTHROPIC_API_KEY is unset.
+ * Throws AiNotConfiguredError when OPENAI_API_KEY is unset.
  */
 export async function generatePrompts(
   input: GeneratePromptsInput,
 ): Promise<string[]> {
-  const apiKey = process.env.ANTHROPIC_API_KEY;
+  const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) throw new AiNotConfiguredError();
 
   const language = (input.language || "").trim() || "the target language";
@@ -67,16 +67,17 @@ export async function generatePrompts(
     `Réponds UNIQUEMENT avec un objet JSON de la forme {"prompts": ["…", "…"]} contenant exactement ${count} chaînes, sans texte additionnel.`,
   ].join("\n");
 
-  const res = await fetch(ANTHROPIC_API_URL, {
+  const res = await fetch(OPENAI_API_URL, {
     method: "POST",
     headers: {
       "content-type": "application/json",
-      "x-api-key": apiKey,
-      "anthropic-version": "2023-06-01",
+      authorization: `Bearer ${apiKey}`,
     },
     body: JSON.stringify({
       model: MODEL,
       max_tokens: 1500,
+      temperature: 0.7,
+      response_format: { type: "json_object" },
       messages: [{ role: "user", content: userText }],
     }),
   });
@@ -90,19 +91,14 @@ export async function generatePrompts(
       /* ignore parse errors */
     }
     throw new Error(
-      `Anthropic API error (${res.status})${detail ? `: ${detail}` : ""}`,
+      `OpenAI API error (${res.status})${detail ? `: ${detail}` : ""}`,
     );
   }
 
   const data = (await res.json()) as {
-    content?: Array<{ type: string; text?: string }>;
+    choices?: Array<{ message?: { content?: string } }>;
   };
-  const text =
-    (data.content ?? [])
-      .filter((b) => b.type === "text" && typeof b.text === "string")
-      .map((b) => b.text as string)
-      .join("\n")
-      .trim() || "";
+  const text = (data.choices?.[0]?.message?.content ?? "").trim();
 
   return parsePrompts(text, count);
 }

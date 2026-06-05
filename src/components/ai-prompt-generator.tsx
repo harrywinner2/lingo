@@ -19,7 +19,7 @@ const STRINGS = {
   en: {
     title: "Generate prompts with AI",
     subtitle:
-      "Describe a theme and let Claude draft culturally-adapted prompts in French.",
+      "Describe a theme and let AI draft culturally-adapted prompts in French.",
     topicPlaceholder: "Theme (optional) — e.g. market haggling, greetings…",
     countLabel: "How many",
     generate: "Generate with AI",
@@ -33,7 +33,7 @@ const STRINGS = {
   fr: {
     title: "Générer des invites avec l'IA",
     subtitle:
-      "Décrivez un thème et laissez Claude rédiger des invites adaptées culturellement, en français.",
+      "Décrivez un thème et laissez l'IA rédiger des invites adaptées culturellement, en français.",
     topicPlaceholder: "Thème (optionnel) — ex. marchander au marché, salutations…",
     countLabel: "Combien",
     generate: "Générer avec l'IA",
