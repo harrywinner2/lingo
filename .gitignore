@@ -67,3 +67,6 @@ next-env.d.ts
 /worker/**/*.bin
 /worker/**/__pycache__/
 /worker/*.log
+
+# voice/data stores (large; on disk + Hugging Face, not git)
+/data/

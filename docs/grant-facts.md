@@ -16,7 +16,8 @@ Use these for Q2 / Q6 / Q16, and to settle the factual-accuracy checklist items
 | Compression vs fp32 | ~3.8× smaller, ~6× faster on CPU (pilot: 285 MB→75 MB, 532 ms→86 ms) |
 | Hugging Face org | `flagship-ai` — 1 int8 bundle (`cameroon-int8`) + 8 fp32 demo repos, all now carry model cards |
 | HF downloads | ~11 / 30 days (low-traffic research models — state honestly, don't inflate) |
-| Open dataset | `flagship-ai/cameroon_bibles` (verse-aligned scripture) |
+| Open text dataset | `flagship-ai/cameroon_bibles` (verse-aligned scripture; 2 langs public) |
+| Open **voice** dataset | `flagship-ai/ghomala-spoken-bible` — **~19h 49m** of Ghomálá' speech, **260** chapter recordings, aligned with Ghomala/French/English text (strong evidence of real spoken-data collection) |
 | Formal benchmark scores | **None yet** — no held-out BLEU/chrF eval has been run; say "evaluation in progress," do not quote a score |
 
 ## Corpus
