@@ -16,22 +16,20 @@ Use these for Q2 / Q6 / Q16, and to settle the factual-accuracy checklist items
 | Compression vs fp32 | ~3.8× smaller, ~6× faster on CPU (pilot: 285 MB→75 MB, 532 ms→86 ms) |
 | Hugging Face org | `flagship-ai` — 1 int8 bundle (`cameroon-int8`) + 8 fp32 demo repos, all now carry model cards |
 | HF downloads | ~11 / 30 days (low-traffic research models — state honestly, don't inflate) |
-| Open text dataset | `flagship-ai/cameroon_bibles` (verse-aligned scripture; 2 langs public) |
+| Open text dataset | `flagship-ai/cameroon_bibles` — **59 Cameroonian languages** now public, verse-aligned (~16.2k files) |
 | Open **voice** dataset | `flagship-ai/ghomala-spoken-bible` — **~19h 49m** of Ghomálá' speech, **260** chapter recordings, aligned with Ghomala/French/English text (strong evidence of real spoken-data collection) |
 | Formal benchmark scores | **None yet** — no held-out BLEU/chrF eval has been run; say "evaluation in progress," do not quote a score |
 
 ## Corpus
 
-- Compiled scripture spans **60 Cameroonian languages** (verse-aligned), plus gathered
+- Compiled scripture spans **59 Cameroonian languages** (verse-aligned), plus gathered
   books/pamphlets/other written material, normalised under the **AGLC** alphabet.
-- The corpus (60) is one more language than the models (59): **Guge** has corpus data
-  but no trained model yet. "60 languages in the corpus" is accurate; "models for 59" is
-  the matching model figure — keep the two numbers distinct in the application.
-- **`cameroon_bibles` public release currently contains only 2 languages** (Bulu, Guidar),
-  not the full 60 — public release of the rest is gated on each Bible translation's
-  copyright. The claim "we compiled and open-sourced cameroon_bibles" is true but the
-  *public* artifact is small; describe it as a sample/growing release, or decide what
-  more can be shared (see open-release policy).
+- Corpus and models both cover **59 Cameroonian languages** — one consistent number.
+  (An earlier "60" counted **Guge**, which turned out to be an *empty placeholder* with
+  no text and no model; it has been dropped from the public list.)
+- **`cameroon_bibles` is now fully public: 59 languages** (verse-aligned, ~16.2k files),
+  up from the original 2-language sample. The "we compiled and open-sourced
+  cameroon_bibles" claim is now fully supported by the public artifact.
 
 ## Factual-accuracy checks (#40)
 
@@ -40,7 +38,7 @@ Use these for Q2 / Q6 / Q16, and to settle the factual-accuracy checklist items
   different thing we do not model). Keep "Pinyin" in the list.
 - ⚠️ **"Televised launch" (2024)** — could NOT be verified from here. Describe as a
   *public launch event* unless you can evidence an actual broadcast. **Owner: you.**
-- ⚠️ **Dataset name/size** — name `cameroon_bibles` ✅; public size = 2 languages (see above).
+- ✅ **Dataset name/size** — name `cameroon_bibles` ✅; now **59 languages** public (~16.2k files).
 - ✅ Languages/model counts above are exact (counted from the live model store).
 
 ## Q2 problem-statement — sourced figures (#47)
@@ -71,6 +69,6 @@ low-bandwidth, and runnable offline/on cheap hardware (which the project is buil
 
 > "We have released open French-pivot machine-translation models covering **59
 > Cameroonian languages** (119 translation directions), built on a corpus we compiled
-> across **60 languages** — scripture as the aligned backbone plus gathered written
+> across **59 languages** — scripture as the aligned backbone plus gathered written
 > sources, unified under the AGLC alphabet — and open-sourced on Hugging Face
 > (`flagship-ai`). Formal benchmark evaluation is in progress."

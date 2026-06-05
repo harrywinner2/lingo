@@ -11,7 +11,7 @@ Everything Lingo has released openly on Hugging Face, under the
   plus a French↔English pair — French-pivot, served as compressed int8.
 - **~20 hours** of open, aligned **Ghomálá' speech** — a rare spoken corpus for an
   oral-first language.
-- **Verse-aligned multilingual text** corpus, compiled across 60 Cameroonian languages.
+- **Verse-aligned multilingual text** corpus, published across **59 Cameroonian languages**.
 - Open since **September 2024**; actively maintained.
 
 ---
@@ -64,10 +64,10 @@ Ghomálá'. ~285 MB each (Ghomálá' repos ~687 MB with ONNX).
 [huggingface.co/datasets/flagship-ai/cameroon_bibles](https://huggingface.co/datasets/flagship-ai/cameroon_bibles)
 - Verse-aligned scripture — the *aligned backbone* of the training corpus, where each
   verse carries a book/chapter/verse reference for cross-language alignment.
-- Public release: a **sample of 2 languages** (Bulu, Guidar; 384 verse files); the full
-  compiled corpus spans **60 Cameroonian languages**, released as each source
-  translation's licensing is cleared.
-- Size: 1.5 MB · 386 files · created 2024-09-26.
+- **59 Cameroonian languages** published (verse-aligned), ~16,200 files — the full
+  compiled corpus. Released for research; rights-holders of any included translation can
+  reach us to address concerns.
+- Created 2024-09-26; expanded to the full corpus 2026-06.
 
 ---
 
@@ -77,6 +77,6 @@ Ghomálá'. ~285 MB each (Ghomálá' repos ~687 MB with ONNX).
 |---|---|---|
 | Translation models | 119 (+ 8 fp32 originals) | 59 Cameroonian languages, both directions |
 | Open speech | 1 dataset | ~20 hours, 260 recordings, trilingual-aligned |
-| Open text | 1 dataset (+ broader corpus) | verse-aligned; 60-language compiled corpus |
+| Open text | 1 dataset | verse-aligned; **59 Cameroonian languages** |
 | License | — | CC-BY-4.0 throughout |
 | Home | — | [huggingface.co/flagship-ai](https://huggingface.co/flagship-ai) · [lingo.cm](https://lingo.cm) |

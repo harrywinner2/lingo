@@ -20,7 +20,7 @@ export const TARGET_LANGUAGES = [
 export const CORPUS_LANGUAGES = [
   "Aghem", "Ajamiya", "Akoose", "Awing", "Babanki", "Bafia", "Bakoko",
   "Bakweri", "Bidwee", "Bulu", "Bum", "Cuvok", "Denya", "Dii", "Doyayo",
-  "Ejagham", "Esimbi", "Ewondo", "Fufulde", "Gbaya", "Ghomala", "Guge",
+  "Ejagham", "Esimbi", "Ewondo", "Fufulde", "Gbaya", "Ghomala",
   "Guidar", "Guiziga", "Isu", "Kapsiki", "Kenyang", "Koonzime", "Lamnso",
   "Limbum", "Mankon", "Massana", "Mbembe", "Medumba", "Meta", "Mmen", "Mofa",
   "Mofu", "Moghamo", "Mpumpong", "Mundani", "Ngi", "Ngienboum", "Ngomba",
