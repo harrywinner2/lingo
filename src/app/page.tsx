@@ -187,6 +187,12 @@ export default async function Home() {
               <Link href="/governance" className="font-medium text-muted hover:text-ink">
                 Governance
               </Link>
+              <Link href="/privacy" className="font-medium text-muted hover:text-ink">
+                Privacy
+              </Link>
+              <Link href="/terms" className="font-medium text-muted hover:text-ink">
+                Terms
+              </Link>
               <a href="https://huggingface.co/flagship-ai" target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 font-medium text-muted hover:text-ink">
                 Hugging Face <ExternalLink className="h-3.5 w-3.5" />
               </a>

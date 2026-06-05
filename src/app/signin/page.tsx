@@ -153,8 +153,9 @@ export default function SignInPage() {
           )}
 
           <p className="mt-6 text-center text-xs text-muted">
-            By continuing you agree to contribute recordings for language
-            preservation research.
+            By continuing you agree to our{" "}
+            <Link href="/terms" className="font-semibold text-accent-600">Terms</Link> and{" "}
+            <Link href="/privacy" className="font-semibold text-accent-600">Privacy Policy</Link>.
           </p>
         </Card>
       </main>
