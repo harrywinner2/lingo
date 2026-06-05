@@ -181,6 +181,12 @@ export default async function Home() {
               <Link href="/translate" className="font-medium text-muted hover:text-ink">
                 {t.nav.translate}
               </Link>
+              <Link href="/blog" className="font-medium text-muted hover:text-ink">
+                {t.nav.blog}
+              </Link>
+              <Link href="/governance" className="font-medium text-muted hover:text-ink">
+                Governance
+              </Link>
               <a href="https://huggingface.co/flagship-ai" target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 font-medium text-muted hover:text-ink">
                 Hugging Face <ExternalLink className="h-3.5 w-3.5" />
               </a>

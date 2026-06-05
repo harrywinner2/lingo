@@ -14,7 +14,7 @@ Run:
 """
 import os, sys
 
-INT8 = "/mnt/chromeos/MyFiles/Downloads/lingo_v2_models_int8"
+INT8 = os.environ.get("INT8_DIR", "/home/kamdemharry/lingo/worker/models_int8")
 ORG = "flagship-ai"
 
 # Original fp32 repos to preserve (do not overwrite with int8).

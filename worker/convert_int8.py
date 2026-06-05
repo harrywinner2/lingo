@@ -8,9 +8,9 @@ Run:  python3 convert_int8.py
 """
 import os, sys, shutil, time, traceback
 
-FP32 = "/mnt/chromeos/MyFiles/Downloads/lingo_v2_models"
-INT8 = "/mnt/chromeos/MyFiles/Downloads/lingo_v2_models_int8"
-TOKS = "/home/kamdemharry/lingo_v2/tokenizers"
+FP32 = os.environ.get("FP32_DIR", "/home/kamdemharry/lingo/worker/models_fp32")
+INT8 = os.environ.get("INT8_DIR", "/home/kamdemharry/lingo/worker/models_int8")
+TOKS = os.environ.get("TOKENIZERS_DIR", "/home/kamdemharry/lingo/worker/tokenizers")
 STAGE = "/tmp/ct2_convert_stage"
 
 # infer.py heuristic: francais-source models use fr-en_tokenizer, the rest en-fr.
